@@ -2,7 +2,8 @@
 
 ## ⚠️ CRITICAL: This is a Stable Baseline Version
 
-**Git Commit:** `5d7cf6b` - Last stable commit  
+**Git Commit:** `3c0a67f` - Clean baseline commit  
+**GitHub Repository:** https://github.com/tybeagley-dev/churnguard-2.3  
 **Status:** ✅ FULLY WORKING - Protected Version  
 **Date:** September 9, 2025  
 **Directory:** `churnguard-v2.2-repo/`
@@ -15,6 +16,24 @@ npm run dev
 ```
 
 **📋 See `STABLE_VERSION.md` for complete safety protocols and recovery instructions.**
+
+## 🔄 Recovery Instructions
+
+**To recover this stable version from anywhere:**
+```bash
+git clone https://github.com/tybeagley-dev/churnguard-2.3.git
+cd churnguard-2.3
+npm install
+npm run dev
+# Access at http://localhost:3002
+```
+
+**Current Status:**
+- ✅ 49 clean files (no sensitive data, no databases)
+- ✅ Complete stable working version saved to GitHub
+- ✅ Frontend with diagonal stripes working
+- ✅ All API endpoints functional  
+- ✅ 873 accounts with proper risk distributions
 
 ---
 
