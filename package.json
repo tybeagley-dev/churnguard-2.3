@@ -1,0 +1,23 @@
+{
+  "name": "churnguard-v2.2-simulation",
+  "version": "1.0.0",
+  "description": "ChurnGuard 2.2 - PostgreSQL simulation using Google Sheets",
+  "type": "module",
+  "scripts": {
+    "setup-accounts": "node scripts/accounts-etl-sqlite.js",
+    "simulate-day": "node scripts/run-daily-simulation.js",
+    "simulate-all": "node scripts/run-full-simulation-sqlite.js",
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.5.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.5.0"
+  }
+}
