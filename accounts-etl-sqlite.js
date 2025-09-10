@@ -14,7 +14,7 @@ class AccountsETLSQLite {
       keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
     });
 
-    this.dbPath = process.env.SQLITE_DB_PATH || './churnguard_simulation.db';
+    this.dbPath = process.env.SQLITE_DB_PATH || './data/churnguard_simulation.db';
   }
 
   async getDatabase() {
@@ -212,7 +212,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   etl.populateAccounts()
     .then(count => {
       console.log(`🎉 Accounts ETL completed! Populated ${count} accounts.`);
-      console.log(`📊 Database location: ${process.env.SQLITE_DB_PATH || './churnguard_simulation.db'}`);
+      console.log(`📊 Database location: ${process.env.SQLITE_DB_PATH || './data/churnguard_simulation.db'}`);
       process.exit(0);
     })
     .catch(error => {

@@ -6,7 +6,7 @@ dotenv.config();
 
 class HistoricalRiskPopulator {
   constructor() {
-    this.dbPath = process.env.SQLITE_DB_PATH || './churnguard_simulation.db';
+    this.dbPath = process.env.SQLITE_DB_PATH || './data/churnguard_simulation.db';
     
     // Risk calculation thresholds
     this.MONTHLY_REDEMPTIONS_THRESHOLD = 10;

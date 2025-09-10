@@ -1,12 +1,8 @@
-# 🔒 ChurnGuard 2.2 - STABLE WORKING VERSION ✅
+# ChurnGuard 2.3
 
-## ⚠️ CRITICAL: This is a Stable Baseline Version
-
-**Git Commit:** `3c0a67f` - Clean baseline commit  
 **GitHub Repository:** https://github.com/tybeagley-dev/churnguard-2.3  
-**Status:** ✅ FULLY WORKING - Protected Version  
-**Date:** September 9, 2025  
-**Directory:** `churnguard-v2.2-repo/`
+**Current Version:** 2.3  
+**Date:** September 9, 2025
 
 ### 🚀 Quick Start
 ```bash
@@ -14,8 +10,6 @@ npm install
 npm run dev
 # Access at http://localhost:3002
 ```
-
-**📋 See `STABLE_VERSION.md` for complete safety protocols and recovery instructions.**
 
 ## 🔄 Recovery Instructions
 
@@ -66,11 +60,11 @@ This repo simulates a PostgreSQL-based ChurnGuard architecture using SQLite as t
 
 ## Development Workflow
 
-⚠️ **IMPORTANT**: This directory (`churnguard-v2.2-repo`) is the primary development environment. 
+⚠️ **IMPORTANT**: This is the primary development environment for ChurnGuard 2.3.
 
-- **Develop here**: Make all changes in this directory
-- **Mirror to final**: Changes are mirrored to `churnguard-v2.2-final` only for GitHub pushes
-- **Never develop in final**: The `churnguard-v2.2-final` directory is for clean GitHub versions only
+- **Single repo approach**: All development happens here
+- **GitHub management**: Uses .gitignore to manage file size limits
+- **Direct deployment**: Changes are committed and pushed directly to GitHub
 
 ## Purpose
 
@@ -87,13 +81,13 @@ Test the PostgreSQL approach before building the real thing:
    npm install
    ```
 
-2. **Configure Google Sheets access:**
-   - The service account in `.bigquery-credentials.json` needs Sheets API access
-   - Make sure your Google Sheet (ID: 1GGHvvCoGHxGPKR5i_I_BrLP9lpRn5XDwHK8HvYyGt2I) is shared with the service account email
+2. **Database setup:**
+   - Uses SQLite database for development
+   - Database file is managed via .gitignore for size control
 
-3. **Verify configuration:**
+3. **Verify setup:**
    ```bash
-   node scripts/accounts-etl.js
+   npm run dev
    ```
 
 ## Running the Simulation
@@ -128,26 +122,22 @@ node scripts/run-daily-simulation.js 2025-07-15
 ## Expected Timing
 
 - **Full simulation**: ~27 minutes (conservative estimate)
-- **Per day**: ~25 seconds (4 parallel queries + sheets updates)
+- **Per day**: ~25 seconds (4 parallel queries + database updates)
 - **Optimistic**: ~11 minutes if queries are fast
 
-## Google Sheets Structure
+## Database Structure
 
-**Sheet: accounts**
+**Table: accounts**
 - account_id, account_name, status, launched_at, csm_owner, hubspot_id, archived_at, last_updated
 
-**Sheet: daily_metrics**  
+**Table: daily_metrics**
 - account_id, date, total_spend, total_texts_delivered, coupons_redeemed, active_subs_cnt
 - Plus timestamp columns for tracking when each metric was last updated
 
 ## Next Steps
 
 After simulation completes:
-1. Analyze the Google Sheets data structure
+1. Analyze the SQLite database structure
 2. Test building aggregations and dashboard queries
 3. Measure query performance vs current BigQuery approach
 4. Use this as the blueprint for real PostgreSQL implementation
-
-## View Results
-
-https://docs.google.com/spreadsheets/d/1GGHvvCoGHxGPKR5i_I_BrLP9lpRn5XDwHK8HvYyGt2I/edit

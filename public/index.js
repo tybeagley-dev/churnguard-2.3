@@ -2857,32 +2857,6 @@ async function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to build historical risk database" });
     }
   });
-  app2.get("/api/bigquery/monthly-trends", async (req, res) => {
-    try {
-      console.log("Fetching BigQuery monthly trends data...");
-      res.set({
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0"
-      });
-      const fs3 = await import("fs");
-      const path3 = await import("path");
-      const correctedDataPath = path3.join(process.cwd(), "server/data/monthly-trends-corrected.json");
-      let monthlyTrends;
-      if (fs3.existsSync(correctedDataPath)) {
-        console.log("\u2705 Using corrected Monthly Trends data with two-tier risk logic");
-        const correctedData = JSON.parse(fs3.readFileSync(correctedDataPath, "utf8"));
-        monthlyTrends = correctedData.data;
-      } else {
-        console.log("\u26A0\uFE0F Corrected data not found, falling back to service");
-        monthlyTrends = await bigQueryDataService.getMonthlyTrends();
-      }
-      res.json(monthlyTrends);
-    } catch (error) {
-      console.error("Error fetching BigQuery monthly trends:", error);
-      res.status(500).json({ error: "Failed to fetch BigQuery monthly trends data" });
-    }
-  });
   app2.get("/api/bigquery/claude-12month", async (req, res) => {
     try {
       console.log("Fetching BigQuery claude 12-month data...");

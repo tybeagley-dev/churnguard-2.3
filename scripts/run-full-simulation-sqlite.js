@@ -137,9 +137,9 @@ class FullSimulationSQLite {
         console.log(`Failed dates: ${failedDays.join(', ')}`);
       }
       
-      console.log(`\n🗄️  Database location: ${process.env.SQLITE_DB_PATH || './churnguard_simulation.db'}`);
+      console.log(`\n🗄️  Database location: ${process.env.SQLITE_DB_PATH || './data/churnguard_simulation.db'}`);
       console.log('\n📋 View your data:');
-      console.log('   sqlite3 churnguard_simulation.db');
+      console.log('   sqlite3 data/churnguard_simulation.db');
       console.log('   .tables');
       console.log('   SELECT COUNT(*) FROM accounts;');
       console.log('   SELECT COUNT(*) FROM daily_metrics;');

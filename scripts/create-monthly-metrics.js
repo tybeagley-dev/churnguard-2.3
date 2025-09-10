@@ -6,7 +6,7 @@ dotenv.config();
 
 class MonthlyMetricsBuilder {
   constructor() {
-    this.dbPath = process.env.SQLITE_DB_PATH || './churnguard_simulation.db';
+    this.dbPath = process.env.SQLITE_DB_PATH || './data/churnguard_simulation.db';
   }
 
   async getDatabase() {

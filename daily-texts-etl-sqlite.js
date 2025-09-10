@@ -11,7 +11,7 @@ class DailyTextsETLSQLite {
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
       keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
     });
-    this.dbPath = process.env.SQLITE_DB_PATH || './churnguard_simulation.db';
+    this.dbPath = process.env.SQLITE_DB_PATH || './data/churnguard_simulation.db';
   }
 
   async getDatabase() {
