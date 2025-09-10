@@ -7,6 +7,9 @@ data/
 # Environment and credentials
 .env
 .bigquery-credentials.json
+test-auth.json
+*-credentials.json
+*-auth.json
 
 # Node modules
 node_modules/
