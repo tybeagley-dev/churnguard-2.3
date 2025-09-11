@@ -233,7 +233,7 @@ export default function AccountMetricsTableMonthly() {
     return calculateTrendingRisk(account).trending_risk_level;
   };
 
-  const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels } = useMemo(() => {
+  const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, uniqueCSMs, uniqueRiskLevels } = useMemo(() => {
     if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
       return { 
         sortedAccounts: [], 
@@ -259,12 +259,6 @@ export default function AccountMetricsTableMonthly() {
           totalRedemptions: 0,
           totalTexts: 0,
           totalSubscribers: 0
-        },
-        calculatedDeltas: {
-          spendDelta: 0,
-          textsDelta: 0,
-          redemptionsDelta: 0,
-          subscribersDelta: 0
         }
       };
     }
@@ -334,10 +328,8 @@ export default function AccountMetricsTableMonthly() {
       lowRiskDelta: 0
     });
 
-    // Calculate current month stats and deltas for comparison periods
+    // Calculate current month stats for comparison periods
     let currentMonthStats = { totalSpend: 0, totalRedemptions: 0, totalTexts: 0, totalSubscribers: 0 };
-    let calculatedDeltas = { spendDelta: 0, textsDelta: 0, redemptionsDelta: 0, subscribersDelta: 0 };
-    
     if (timePeriod !== 'current_month' && currentMonthData) {
       // Filter currentMonthData based on the same filters
       let filteredCurrentMonthData = currentMonthData;
@@ -350,7 +342,7 @@ export default function AccountMetricsTableMonthly() {
         filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => (acc.riskLevel || acc.risk_level) === selectedRiskLevel);
       }
       
-      // Calculate current month totals (unchanged - same data as MTD)
+      // Calculate current month totals
       currentMonthStats = filteredCurrentMonthData.reduce((acc: any, account: AccountMetric) => {
         acc.totalSpend += account.total_spend || 0;
         acc.totalRedemptions += account.coupons_redeemed || 0;
@@ -362,20 +354,6 @@ export default function AccountMetricsTableMonthly() {
         totalRedemptions: 0,
         totalTexts: 0,
         totalSubscribers: 0
-      });
-      
-      // Calculate deltas by summing individual account deltas from unified dataset
-      calculatedDeltas = filteredAccounts.reduce((acc, account) => {
-        acc.spendDelta += (account.current_total_spend || 0) - (account.total_spend || 0);
-        acc.textsDelta += (account.current_total_texts_delivered || 0) - (account.total_texts_delivered || 0);
-        acc.redemptionsDelta += (account.current_coupons_redeemed || 0) - (account.coupons_redeemed || 0);
-        acc.subscribersDelta += (account.current_active_subs_cnt || 0) - (account.active_subs_cnt || 0);
-        return acc;
-      }, {
-        spendDelta: 0,
-        textsDelta: 0,
-        redemptionsDelta: 0,
-        subscribersDelta: 0
       });
     }
 
@@ -459,7 +437,7 @@ export default function AccountMetricsTableMonthly() {
     const paginatedAccounts = sortedAccounts.slice(startIndex, startIndex + accountsPerPage);
     const totalPages = Math.ceil(sortedAccounts.length / accountsPerPage);
 
-    return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels };
+    return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, uniqueCSMs, uniqueRiskLevels };
   }, [accounts, selectedCSMs, selectedRiskLevel, sortField, sortDirection, currentPage, timePeriod, calculateTrendingRiskLevel]);
 
   const formatCurrency = (value: number) => {
@@ -615,12 +593,12 @@ export default function AccountMetricsTableMonthly() {
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(currentMonthStats.totalSpend - calculatedDeltas.spendDelta)}</span>
+                    <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(summaryStats.totalSpend)}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(calculatedDeltas.spendDelta, 'currency')}
+                      {formatDelta(currentMonthStats.totalSpend - summaryStats.totalSpend, 'currency')}
                     </div>
                   </div>
                 </>
@@ -640,12 +618,12 @@ export default function AccountMetricsTableMonthly() {
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{(currentMonthStats.totalTexts - calculatedDeltas.textsDelta).toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{summaryStats.totalTexts.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(calculatedDeltas.textsDelta, 'number')}
+                      {formatDelta(currentMonthStats.totalTexts - summaryStats.totalTexts, 'number')}
                     </div>
                   </div>
                 </>
@@ -665,12 +643,12 @@ export default function AccountMetricsTableMonthly() {
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{(currentMonthStats.totalRedemptions - calculatedDeltas.redemptionsDelta).toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{summaryStats.totalRedemptions.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(calculatedDeltas.redemptionsDelta, 'number')}
+                      {formatDelta(currentMonthStats.totalRedemptions - summaryStats.totalRedemptions, 'number')}
                     </div>
                   </div>
                 </>
@@ -690,12 +668,12 @@ export default function AccountMetricsTableMonthly() {
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{(currentMonthStats.totalSubscribers - calculatedDeltas.subscribersDelta).toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{summaryStats.totalSubscribers.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(calculatedDeltas.subscribersDelta, 'number')}
+                      {formatDelta(currentMonthStats.totalSubscribers - summaryStats.totalSubscribers, 'number')}
                     </div>
                   </div>
                 </>

@@ -298,119 +298,406 @@ app.get("/api/bigquery/accounts", async (req, res) => {
 
 app.get("/api/bigquery/accounts/monthly", async (req, res) => {
   try {
-    const { month = new Date().toISOString().slice(0, 7) } = req.query; // YYYY-MM format
+    const { period = 'current_month' } = req.query;
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const isCurrentMonth = month === currentMonth;
     
-    console.log(`📅 Monthly API: month=${month}, currentMonth=${currentMonth}, isCurrentMonth=${isCurrentMonth}`);
+    console.log(`📅 Monthly API: period=${period}, currentMonth=${currentMonth}`);
     
     let accounts;
     
-    if (isCurrentMonth) {
-      // Current month: Use daily_metrics with proportional trending analysis
-      const currentDate = new Date();
-      const currentDay = currentDate.getDate();
-      const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-      const progressPercentage = Math.max((currentDay - 1) / daysInMonth, 0.01); // Avoid division by zero
-      
-      // First get the raw MTD data
-      const rawAccounts = await db.all(`
-        SELECT 
-          a.account_id,
-          a.account_name,
-          a.status,
-          a.csm_owner,
-          a.launched_at,
-          
-          -- Current month totals from daily_metrics
-          COALESCE(SUM(dm.total_spend), 0) as total_spend,
-          COALESCE(SUM(dm.total_texts_delivered), 0) as total_texts_delivered,
-          COALESCE(SUM(dm.coupons_redeemed), 0) as coupons_redeemed,
-          COALESCE(ROUND(AVG(dm.active_subs_cnt)), 0) as active_subs_cnt
-          
-        FROM accounts a
-        LEFT JOIN daily_metrics dm ON a.account_id = dm.account_id AND dm.date >= ? || '-01' AND dm.date <= DATE('now')
-        WHERE (
-          -- Apply same filtering as Monthly View
-          DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
-          AND (
-            -- Account is not archived (both fields are null), OR
-            (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-            -- Account was archived during or after this month started
-            OR mm.month < date(COALESCE(a.archived_at, a.earliest_unit_archived_at))
-          )
-        )
-        GROUP BY a.account_id, a.account_name, a.status, a.csm_owner, a.launched_at
-      `, month, month, month);
-      
-      // Apply proportional trending analysis in JavaScript
-      console.log(`🔄 Applying trending analysis: Day ${currentDay}/${daysInMonth}, Progress: ${(progressPercentage * 100).toFixed(1)}%`);
-      
-      accounts = rawAccounts.map(account => {
-        // Calculate projected month-end values
-        const projectedCoupons = account.coupons_redeemed / progressPercentage;
-        
-        // Determine risk level using projections
-        let risk_level = 'low';
-        
-        if (account.status === 'FROZEN') {
-          risk_level = 'high';
-        } else if (account.active_subs_cnt < 300 && projectedCoupons < 35) {
-          risk_level = 'high';
-        } else if (projectedCoupons <= 3) {
-          risk_level = 'medium';
-        } else if (account.active_subs_cnt < 300 || projectedCoupons < 35) {
-          risk_level = 'medium';
-        }
-        
-        return {
-          ...account,
-          risk_level
-        };
-      });
-    } else {
-      // Historical months: Use monthly_metrics table
+    if (period === 'current_month') {
+      // Current MTD: Use monthly_metrics table (raw values, updated daily by ETL)
       accounts = await db.all(`
         SELECT 
           a.account_id,
-          a.account_name,
+          a.account_name as name,
           a.status,
-          a.csm_owner,
+          a.csm_owner as csm,
           a.launched_at,
           
-          -- Monthly totals from monthly_metrics table
+          -- Current month totals from monthly_metrics (updated daily by ETL)
           COALESCE(mm.total_spend, 0) as total_spend,
           COALESCE(mm.total_texts_delivered, 0) as total_texts_delivered,
           COALESCE(mm.total_coupons_redeemed, 0) as coupons_redeemed,
           COALESCE(ROUND(mm.avg_active_subs_cnt), 0) as active_subs_cnt,
+          1 as location_cnt,
+          mm.last_updated as latest_activity,
           
-          -- Risk calculation using historical data
-          CASE 
-            WHEN a.status = 'FROZEN' THEN 'high'
-            WHEN (COALESCE(mm.avg_active_subs_cnt, 0) < 300 AND COALESCE(mm.total_coupons_redeemed, 0) < 35) THEN 'high'
-            WHEN (COALESCE(mm.total_coupons_redeemed, 0) <= 3) THEN 'medium'
-            WHEN (COALESCE(mm.avg_active_subs_cnt, 0) < 300 OR COALESCE(mm.total_coupons_redeemed, 0) < 35) THEN 'medium'
-            ELSE 'low'
-          END as risk_level
+          -- Use the pre-calculated historical_risk_level from monthly_metrics
+          COALESCE(mm.historical_risk_level, 'low') as risk_level,
+          mm.historical_risk_level as riskLevel
           
         FROM accounts a
-        INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id AND mm.month = ?
+        INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id 
+          AND mm.month = ? 
+          AND mm.month_status = 'current'
         WHERE (
-          -- Use same eligibility logic as ETL pipeline
-          a.status IN ('LAUNCHED', 'FROZEN') OR 
-          (a.status = 'ARCHIVED' AND 
-           mm.month < date(COALESCE(a.archived_at, a.earliest_unit_archived_at)))
+          -- Apply same filtering as other endpoints
+          DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+          AND (
+            (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+            OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(? || '-01')
+          )
         )
         ORDER BY 
           CASE 
-            WHEN a.status = 'FROZEN' THEN 3
-            WHEN (COALESCE(mm.avg_active_subs_cnt, 0) < 300 AND COALESCE(mm.total_coupons_redeemed, 0) < 35) THEN 3
-            WHEN (COALESCE(mm.total_coupons_redeemed, 0) <= 3) THEN 2
-            WHEN (COALESCE(mm.avg_active_subs_cnt, 0) < 300 OR COALESCE(mm.total_coupons_redeemed, 0) < 35) THEN 2
+            WHEN mm.historical_risk_level = 'high' THEN 3
+            WHEN mm.historical_risk_level = 'medium' THEN 2
             ELSE 1
           END DESC,
-          total_spend DESC
-      `, month);
+          mm.total_spend DESC
+      `, currentMonth, currentMonth, currentMonth);
+    } else if (period === 'previous_month') {
+      // vs Previous MTD: Return unified view with all accounts from both periods
+      const prevMonth = new Date();
+      prevMonth.setMonth(prevMonth.getMonth() - 1);
+      const prevMonthStr = prevMonth.toISOString().slice(0, 7); // YYYY-MM format
+      
+      const startDate = `${prevMonthStr}-01`;
+      
+      // Calculate same day of previous month as we are in current month
+      const currentDay = new Date().getDate();
+      const lastDayOfPrevMonth = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0).getDate();
+      const endDay = Math.min(currentDay - 1, lastDayOfPrevMonth); // -1 to match "through previous complete day"
+      const endDate = `${prevMonthStr}-${endDay.toString().padStart(2, '0')}`;
+      
+      console.log(`📅 Previous Month MTD: ${startDate} to ${endDate} (${endDay} days)`);
+      
+      // Get unified dataset with all accounts from both periods
+      accounts = await db.all(`
+        WITH all_relevant_accounts AS (
+          -- All accounts that should be included in comparison (active in either period)
+          SELECT DISTINCT a.account_id, a.account_name, a.status, a.csm_owner, a.launched_at
+          FROM accounts a
+          WHERE (
+            -- Include if launched before end of current month (includes September launches)
+            DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+            -- Include if launched before end of previous month comparison period  
+            OR DATE(a.launched_at) <= DATE(?)
+          )
+          AND (
+            -- Not archived, or archived after the start of our comparison window
+            (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+            OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(?)
+          )
+        ),
+        current_month_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(mm.total_spend, 0) as current_total_spend,
+            COALESCE(mm.total_texts_delivered, 0) as current_total_texts_delivered,
+            COALESCE(mm.total_coupons_redeemed, 0) as current_coupons_redeemed,
+            COALESCE(ROUND(mm.avg_active_subs_cnt), 0) as current_active_subs_cnt,
+            mm.last_updated as current_latest_activity,
+            COALESCE(mm.historical_risk_level, 'low') as current_risk_level
+          FROM all_relevant_accounts ara
+          LEFT JOIN monthly_metrics mm ON ara.account_id = mm.account_id 
+            AND mm.month = ? 
+            AND mm.month_status = 'current'
+        ),
+        previous_month_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(SUM(dm.total_spend), 0) as previous_total_spend,
+            COALESCE(SUM(dm.total_texts_delivered), 0) as previous_total_texts_delivered,
+            COALESCE(SUM(dm.coupons_redeemed), 0) as previous_coupons_redeemed,
+            COALESCE(ROUND(AVG(dm.active_subs_cnt)), 0) as previous_active_subs_cnt,
+            MAX(dm.date) as previous_latest_activity
+          FROM all_relevant_accounts ara
+          LEFT JOIN daily_metrics dm ON ara.account_id = dm.account_id 
+            AND dm.date >= ?
+            AND dm.date <= ?
+          GROUP BY ara.account_id
+        )
+        SELECT 
+          ara.account_id,
+          ara.account_name as name,
+          ara.status,
+          ara.csm_owner as csm,
+          ara.launched_at,
+          
+          -- Show previous month data in main columns for comparison view
+          cmd.previous_total_spend as total_spend,
+          cmd.previous_total_texts_delivered as total_texts_delivered,
+          cmd.previous_coupons_redeemed as coupons_redeemed,
+          cmd.previous_active_subs_cnt as active_subs_cnt,
+          1 as location_cnt,
+          COALESCE(cmd.previous_latest_activity, pmd.current_latest_activity) as latest_activity,
+          
+          -- Add current month data for delta calculations in frontend
+          pmd.current_total_spend,
+          pmd.current_total_texts_delivered,
+          pmd.current_coupons_redeemed,
+          pmd.current_active_subs_cnt,
+          
+          -- Risk calculation for comparison period
+          CASE 
+            WHEN ara.status = 'FROZEN' THEN 'high'
+            WHEN (cmd.previous_active_subs_cnt < 300 AND cmd.previous_coupons_redeemed < 35) THEN 'high'
+            WHEN (cmd.previous_coupons_redeemed <= 3) THEN 'medium'
+            WHEN (cmd.previous_active_subs_cnt < 300 OR cmd.previous_coupons_redeemed < 35) THEN 'medium'
+            ELSE 'low'
+          END as risk_level
+          
+        FROM all_relevant_accounts ara
+        LEFT JOIN current_month_data pmd ON ara.account_id = pmd.account_id
+        LEFT JOIN previous_month_data cmd ON ara.account_id = cmd.account_id
+        ORDER BY 
+          (COALESCE(pmd.current_total_spend, 0) + COALESCE(cmd.previous_total_spend, 0)) DESC
+      `, currentMonth, endDate, startDate, currentMonth, startDate, endDate);
+    } else if (period === 'last_3_month_avg') {
+      // vs Last 3 Month Average: Return unified view with all accounts from both periods
+      const currentDate = new Date();
+      const currentDay = currentDate.getDate();
+      
+      // Calculate 3 months ago, 2 months ago, and 1 month ago
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      const twoMonthsAgo = new Date();
+      twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+      const oneMonthAgo = new Date();
+      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+      
+      // Get same day ranges for each of the 3 months
+      const month3Start = `${threeMonthsAgo.toISOString().slice(0, 7)}-01`;
+      const month3End = `${threeMonthsAgo.toISOString().slice(0, 7)}-${Math.min(currentDay - 1, new Date(threeMonthsAgo.getFullYear(), threeMonthsAgo.getMonth() + 1, 0).getDate()).toString().padStart(2, '0')}`;
+      
+      const month2Start = `${twoMonthsAgo.toISOString().slice(0, 7)}-01`;
+      const month2End = `${twoMonthsAgo.toISOString().slice(0, 7)}-${Math.min(currentDay - 1, new Date(twoMonthsAgo.getFullYear(), twoMonthsAgo.getMonth() + 1, 0).getDate()).toString().padStart(2, '0')}`;
+      
+      const month1Start = `${oneMonthAgo.toISOString().slice(0, 7)}-01`;
+      const month1End = `${oneMonthAgo.toISOString().slice(0, 7)}-${Math.min(currentDay - 1, new Date(oneMonthAgo.getFullYear(), oneMonthAgo.getMonth() + 1, 0).getDate()).toString().padStart(2, '0')}`;
+      
+      console.log(`📅 Last 3 Month Average: ${month3Start} to ${month3End}, ${month2Start} to ${month2End}, ${month1Start} to ${month1End}`);
+      
+      // Get unified dataset with all accounts from both periods
+      accounts = await db.all(`
+        WITH all_relevant_accounts AS (
+          -- All accounts that should be included in comparison (active in either period)
+          SELECT DISTINCT a.account_id, a.account_name, a.status, a.csm_owner, a.launched_at
+          FROM accounts a
+          WHERE (
+            -- Include if launched before end of current month
+            DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+            -- Include if launched before end of comparison periods
+            OR DATE(a.launched_at) <= DATE(?)
+          )
+          AND (
+            -- Not archived, or archived after the start of our comparison window
+            (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+            OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(?)
+          )
+        ),
+        current_month_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(mm.total_spend, 0) as current_total_spend,
+            COALESCE(mm.total_texts_delivered, 0) as current_total_texts_delivered,
+            COALESCE(mm.total_coupons_redeemed, 0) as current_coupons_redeemed,
+            COALESCE(ROUND(mm.avg_active_subs_cnt), 0) as current_active_subs_cnt,
+            mm.last_updated as current_latest_activity,
+            COALESCE(mm.historical_risk_level, 'low') as current_risk_level
+          FROM all_relevant_accounts ara
+          LEFT JOIN monthly_metrics mm ON ara.account_id = mm.account_id 
+            AND mm.month = ? 
+            AND mm.month_status = 'current'
+        ),
+        avg_comparison_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(ROUND(AVG(month_spend), 2), 0) as avg_total_spend,
+            COALESCE(ROUND(AVG(month_texts), 0), 0) as avg_total_texts_delivered,
+            COALESCE(ROUND(AVG(month_coupons), 0), 0) as avg_coupons_redeemed,
+            COALESCE(ROUND(AVG(month_subs), 0), 0) as avg_active_subs_cnt,
+            MAX(latest_date) as avg_latest_activity
+          FROM all_relevant_accounts ara
+          LEFT JOIN (
+            -- Month 1 data
+            SELECT 
+              a.account_id,
+              COALESCE(SUM(dm.total_spend), 0) as month_spend,
+              COALESCE(SUM(dm.total_texts_delivered), 0) as month_texts,
+              COALESCE(SUM(dm.coupons_redeemed), 0) as month_coupons,
+              COALESCE(ROUND(AVG(dm.active_subs_cnt)), 0) as month_subs,
+              MAX(dm.date) as latest_date,
+              1 as month_num
+            FROM accounts a
+            LEFT JOIN daily_metrics dm ON a.account_id = dm.account_id 
+              AND dm.date >= ? AND dm.date <= ?
+            GROUP BY a.account_id
+            
+            UNION ALL
+            
+            -- Month 2 data
+            SELECT 
+              a.account_id,
+              COALESCE(SUM(dm.total_spend), 0) as month_spend,
+              COALESCE(SUM(dm.total_texts_delivered), 0) as month_texts,
+              COALESCE(SUM(dm.coupons_redeemed), 0) as month_coupons,
+              COALESCE(ROUND(AVG(dm.active_subs_cnt)), 0) as month_subs,
+              MAX(dm.date) as latest_date,
+              2 as month_num
+            FROM accounts a
+            LEFT JOIN daily_metrics dm ON a.account_id = dm.account_id 
+              AND dm.date >= ? AND dm.date <= ?
+            GROUP BY a.account_id
+            
+            UNION ALL
+            
+            -- Month 3 data
+            SELECT 
+              a.account_id,
+              COALESCE(SUM(dm.total_spend), 0) as month_spend,
+              COALESCE(SUM(dm.total_texts_delivered), 0) as month_texts,
+              COALESCE(SUM(dm.coupons_redeemed), 0) as month_coupons,
+              COALESCE(ROUND(AVG(dm.active_subs_cnt)), 0) as month_subs,
+              MAX(dm.date) as latest_date,
+              3 as month_num
+            FROM accounts a
+            LEFT JOIN daily_metrics dm ON a.account_id = dm.account_id 
+              AND dm.date >= ? AND dm.date <= ?
+            GROUP BY a.account_id
+          ) monthly_data ON ara.account_id = monthly_data.account_id
+          GROUP BY ara.account_id
+        )
+        SELECT 
+          ara.account_id,
+          ara.account_name as name,
+          ara.status,
+          ara.csm_owner as csm,
+          ara.launched_at,
+          
+          -- Show average data in main columns for comparison view
+          acd.avg_total_spend as total_spend,
+          acd.avg_total_texts_delivered as total_texts_delivered,
+          acd.avg_coupons_redeemed as coupons_redeemed,
+          acd.avg_active_subs_cnt as active_subs_cnt,
+          1 as location_cnt,
+          COALESCE(acd.avg_latest_activity, cmd.current_latest_activity) as latest_activity,
+          
+          -- Add current month data for delta calculations in frontend
+          cmd.current_total_spend,
+          cmd.current_total_texts_delivered,
+          cmd.current_coupons_redeemed,
+          cmd.current_active_subs_cnt,
+          
+          -- Risk calculation for comparison period
+          CASE 
+            WHEN ara.status = 'FROZEN' THEN 'high'
+            WHEN (acd.avg_active_subs_cnt < 300 AND acd.avg_coupons_redeemed < 35) THEN 'high'
+            WHEN (acd.avg_coupons_redeemed <= 3) THEN 'medium'
+            WHEN (acd.avg_active_subs_cnt < 300 OR acd.avg_coupons_redeemed < 35) THEN 'medium'
+            ELSE 'low'
+          END as risk_level
+          
+        FROM all_relevant_accounts ara
+        LEFT JOIN current_month_data cmd ON ara.account_id = cmd.account_id
+        LEFT JOIN avg_comparison_data acd ON ara.account_id = acd.account_id
+        ORDER BY 
+          (COALESCE(cmd.current_total_spend, 0) + COALESCE(acd.avg_total_spend, 0)) DESC
+      `, currentMonth, month1End, month3Start, currentMonth, month1Start, month1End, month2Start, month2End, month3Start, month3End);
+    } else if (period === 'this_month_last_year') {
+      // vs This Month Last Year: Return unified view with all accounts from both periods  
+      const currentDate = new Date();
+      const currentDay = currentDate.getDate();
+      const currentMonthStr = currentDate.toISOString().slice(0, 7); // YYYY-MM
+      
+      // Calculate same month last year
+      const lastYear = new Date();
+      lastYear.setFullYear(lastYear.getFullYear() - 1);
+      const lastYearMonth = lastYear.toISOString().slice(0, 7); // YYYY-MM
+      
+      const lastYearStart = `${lastYearMonth}-01`;
+      const lastYearEnd = `${lastYearMonth}-${Math.min(currentDay - 1, new Date(lastYear.getFullYear(), lastYear.getMonth() + 1, 0).getDate()).toString().padStart(2, '0')}`;
+      
+      console.log(`📅 This Month Last Year: ${lastYearStart} to ${lastYearEnd}`);
+      
+      // Get unified dataset with all accounts from both periods
+      accounts = await db.all(`
+        WITH all_relevant_accounts AS (
+          -- All accounts that should be included in comparison (active in either period)
+          SELECT DISTINCT a.account_id, a.account_name, a.status, a.csm_owner, a.launched_at
+          FROM accounts a
+          WHERE (
+            -- Include if launched before end of current month
+            DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+            -- Include if launched before end of last year comparison period
+            OR DATE(a.launched_at) <= DATE(?)
+          )
+          AND (
+            -- Not archived, or archived after the start of our comparison window
+            (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+            OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(?)
+          )
+        ),
+        current_month_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(mm.total_spend, 0) as current_total_spend,
+            COALESCE(mm.total_texts_delivered, 0) as current_total_texts_delivered,
+            COALESCE(mm.total_coupons_redeemed, 0) as current_coupons_redeemed,
+            COALESCE(ROUND(mm.avg_active_subs_cnt), 0) as current_active_subs_cnt,
+            mm.last_updated as current_latest_activity,
+            COALESCE(mm.historical_risk_level, 'low') as current_risk_level
+          FROM all_relevant_accounts ara
+          LEFT JOIN monthly_metrics mm ON ara.account_id = mm.account_id 
+            AND mm.month = ? 
+            AND mm.month_status = 'current'
+        ),
+        last_year_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(SUM(dm.total_spend), 0) as last_year_total_spend,
+            COALESCE(SUM(dm.total_texts_delivered), 0) as last_year_total_texts_delivered,
+            COALESCE(SUM(dm.coupons_redeemed), 0) as last_year_coupons_redeemed,
+            COALESCE(ROUND(AVG(dm.active_subs_cnt)), 0) as last_year_active_subs_cnt,
+            MAX(dm.date) as last_year_latest_activity
+          FROM all_relevant_accounts ara
+          LEFT JOIN daily_metrics dm ON ara.account_id = dm.account_id 
+            AND dm.date >= ?
+            AND dm.date <= ?
+          GROUP BY ara.account_id
+        )
+        SELECT 
+          ara.account_id,
+          ara.account_name as name,
+          ara.status,
+          ara.csm_owner as csm,
+          ara.launched_at,
+          
+          -- Show last year data in main columns for comparison view
+          lyd.last_year_total_spend as total_spend,
+          lyd.last_year_total_texts_delivered as total_texts_delivered,
+          lyd.last_year_coupons_redeemed as coupons_redeemed,
+          lyd.last_year_active_subs_cnt as active_subs_cnt,
+          1 as location_cnt,
+          COALESCE(lyd.last_year_latest_activity, cmd.current_latest_activity) as latest_activity,
+          
+          -- Add current month data for delta calculations in frontend
+          cmd.current_total_spend,
+          cmd.current_total_texts_delivered,
+          cmd.current_coupons_redeemed,
+          cmd.current_active_subs_cnt,
+          
+          -- Risk calculation for comparison period
+          CASE 
+            WHEN ara.status = 'FROZEN' THEN 'high'
+            WHEN (lyd.last_year_active_subs_cnt < 300 AND lyd.last_year_coupons_redeemed < 35) THEN 'high'
+            WHEN (lyd.last_year_coupons_redeemed <= 3) THEN 'medium'
+            WHEN (lyd.last_year_active_subs_cnt < 300 OR lyd.last_year_coupons_redeemed < 35) THEN 'medium'
+            ELSE 'low'
+          END as risk_level
+          
+        FROM all_relevant_accounts ara
+        LEFT JOIN current_month_data cmd ON ara.account_id = cmd.account_id
+        LEFT JOIN last_year_data lyd ON ara.account_id = lyd.account_id
+        ORDER BY 
+          (COALESCE(cmd.current_total_spend, 0) + COALESCE(lyd.last_year_total_spend, 0)) DESC
+      `, currentMonthStr, lastYearEnd, lastYearStart, currentMonthStr, lastYearStart, lastYearEnd);
+    } else {
+      // Other periods not yet implemented
+      console.log(`⚠️  Unsupported period: ${period}`);
+      accounts = [];
     }
     
     // Sort accounts by risk level and total spend (applies to both current and historical)

@@ -37,11 +37,6 @@ interface AccountMetric {
   texts_delta: number;
   coupons_delta: number;
   subs_delta: number;
-  // Current month data for comparison periods
-  current_total_spend?: number;
-  current_total_texts_delivered?: number;
-  current_coupons_redeemed?: number;
-  current_active_subs_cnt?: number;
 }
 
 type SortField = 'name' | 'csm' | 'status' | 'total_spend' | 'total_texts_delivered' | 'coupons_redeemed' | 'active_subs_cnt' | 'location_cnt' | 'risk_level' | 'trending_risk_level' | 'spend_delta' | 'texts_delta' | 'coupons_delta' | 'subs_delta';
@@ -233,7 +228,7 @@ export default function AccountMetricsTableMonthly() {
     return calculateTrendingRisk(account).trending_risk_level;
   };
 
-  const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels } = useMemo(() => {
+  const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, uniqueCSMs, uniqueRiskLevels } = useMemo(() => {
     if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
       return { 
         sortedAccounts: [], 
@@ -250,21 +245,13 @@ export default function AccountMetricsTableMonthly() {
           totalRedemptions: 0,
           totalTexts: 0,
           totalSubscribers: 0,
+          spendDelta: 0,
+          redemptionsDelta: 0,
+          textsDelta: 0,
+          subscribersDelta: 0,
           highRiskDelta: 0,
           medRiskDelta: 0,
           lowRiskDelta: 0
-        },
-        currentMonthStats: {
-          totalSpend: 0,
-          totalRedemptions: 0,
-          totalTexts: 0,
-          totalSubscribers: 0
-        },
-        calculatedDeltas: {
-          spendDelta: 0,
-          textsDelta: 0,
-          redemptionsDelta: 0,
-          subscribersDelta: 0
         }
       };
     }
@@ -313,6 +300,14 @@ export default function AccountMetricsTableMonthly() {
       acc.totalTexts += account.total_texts_delivered || 0;
       acc.totalSubscribers += account.active_subs_cnt || 0;
       
+      // Add deltas from the accounts if timePeriod is not current_month
+      if (timePeriod !== 'current_month') {
+        acc.spendDelta += account.spend_delta || 0;
+        acc.redemptionsDelta += account.coupons_delta || 0;
+        acc.textsDelta += account.texts_delta || 0;
+        acc.subscribersDelta += account.subs_delta || 0;
+      }
+      
       // Count risk levels
       const riskLevel = account.riskLevel || account.risk_level || 'low';
       if (riskLevel === 'high') acc.highRiskCount += 1;
@@ -329,55 +324,14 @@ export default function AccountMetricsTableMonthly() {
       totalRedemptions: 0,
       totalTexts: 0,
       totalSubscribers: 0,
+      spendDelta: 0,
+      redemptionsDelta: 0,
+      textsDelta: 0,
+      subscribersDelta: 0,
       highRiskDelta: 0,
       medRiskDelta: 0,
       lowRiskDelta: 0
     });
-
-    // Calculate current month stats and deltas for comparison periods
-    let currentMonthStats = { totalSpend: 0, totalRedemptions: 0, totalTexts: 0, totalSubscribers: 0 };
-    let calculatedDeltas = { spendDelta: 0, textsDelta: 0, redemptionsDelta: 0, subscribersDelta: 0 };
-    
-    if (timePeriod !== 'current_month' && currentMonthData) {
-      // Filter currentMonthData based on the same filters
-      let filteredCurrentMonthData = currentMonthData;
-      
-      if (selectedCSMs.length > 0) {
-        filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => selectedCSMs.includes(acc.csm));
-      }
-      
-      if (selectedRiskLevel !== 'all') {
-        filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => (acc.riskLevel || acc.risk_level) === selectedRiskLevel);
-      }
-      
-      // Calculate current month totals (unchanged - same data as MTD)
-      currentMonthStats = filteredCurrentMonthData.reduce((acc: any, account: AccountMetric) => {
-        acc.totalSpend += account.total_spend || 0;
-        acc.totalRedemptions += account.coupons_redeemed || 0;
-        acc.totalTexts += account.total_texts_delivered || 0;
-        acc.totalSubscribers += account.active_subs_cnt || 0;
-        return acc;
-      }, {
-        totalSpend: 0,
-        totalRedemptions: 0,
-        totalTexts: 0,
-        totalSubscribers: 0
-      });
-      
-      // Calculate deltas by summing individual account deltas from unified dataset
-      calculatedDeltas = filteredAccounts.reduce((acc, account) => {
-        acc.spendDelta += (account.current_total_spend || 0) - (account.total_spend || 0);
-        acc.textsDelta += (account.current_total_texts_delivered || 0) - (account.total_texts_delivered || 0);
-        acc.redemptionsDelta += (account.current_coupons_redeemed || 0) - (account.coupons_redeemed || 0);
-        acc.subscribersDelta += (account.current_active_subs_cnt || 0) - (account.active_subs_cnt || 0);
-        return acc;
-      }, {
-        spendDelta: 0,
-        textsDelta: 0,
-        redemptionsDelta: 0,
-        subscribersDelta: 0
-      });
-    }
 
     // Calculate risk level deltas for comparison periods
     if (timePeriod !== 'current_month' && currentMonthData) {
@@ -459,7 +413,7 @@ export default function AccountMetricsTableMonthly() {
     const paginatedAccounts = sortedAccounts.slice(startIndex, startIndex + accountsPerPage);
     const totalPages = Math.ceil(sortedAccounts.length / accountsPerPage);
 
-    return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels };
+    return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, uniqueCSMs, uniqueRiskLevels };
   }, [accounts, selectedCSMs, selectedRiskLevel, sortField, sortDirection, currentPage, timePeriod, calculateTrendingRiskLevel]);
 
   const formatCurrency = (value: number) => {
@@ -609,18 +563,18 @@ export default function AccountMetricsTableMonthly() {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-xs text-gray-600">Current Month</span>
-                <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(timePeriod === 'current_month' ? summaryStats.totalSpend : currentMonthStats.totalSpend)}</span>
+                <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(summaryStats.totalSpend + summaryStats.spendDelta)}</span>
               </div>
               {timePeriod !== 'current_month' && (
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(currentMonthStats.totalSpend - calculatedDeltas.spendDelta)}</span>
+                    <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(summaryStats.totalSpend)}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(calculatedDeltas.spendDelta, 'currency')}
+                      {formatDelta(summaryStats.spendDelta, 'currency')}
                     </div>
                   </div>
                 </>
@@ -634,18 +588,18 @@ export default function AccountMetricsTableMonthly() {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-xs text-gray-600">Current Month</span>
-                <span className="text-sm font-bold text-orange-600">{(timePeriod === 'current_month' ? summaryStats.totalTexts : currentMonthStats.totalTexts).toLocaleString()}</span>
+                <span className="text-sm font-bold text-orange-600">{(summaryStats.totalTexts + summaryStats.textsDelta).toLocaleString()}</span>
               </div>
               {timePeriod !== 'current_month' && (
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{(currentMonthStats.totalTexts - calculatedDeltas.textsDelta).toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{summaryStats.totalTexts.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(calculatedDeltas.textsDelta, 'number')}
+                      {formatDelta(summaryStats.textsDelta, 'number')}
                     </div>
                   </div>
                 </>
@@ -659,18 +613,18 @@ export default function AccountMetricsTableMonthly() {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-xs text-gray-600">Current Month</span>
-                <span className="text-sm font-bold text-green-600">{(timePeriod === 'current_month' ? summaryStats.totalRedemptions : currentMonthStats.totalRedemptions).toLocaleString()}</span>
+                <span className="text-sm font-bold text-green-600">{(summaryStats.totalRedemptions + summaryStats.redemptionsDelta).toLocaleString()}</span>
               </div>
               {timePeriod !== 'current_month' && (
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{(currentMonthStats.totalRedemptions - calculatedDeltas.redemptionsDelta).toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{summaryStats.totalRedemptions.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(calculatedDeltas.redemptionsDelta, 'number')}
+                      {formatDelta(summaryStats.redemptionsDelta, 'number')}
                     </div>
                   </div>
                 </>
@@ -684,18 +638,18 @@ export default function AccountMetricsTableMonthly() {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-xs text-gray-600">Current Month</span>
-                <span className="text-sm font-bold text-blue-600">{(timePeriod === 'current_month' ? summaryStats.totalSubscribers : currentMonthStats.totalSubscribers).toLocaleString()}</span>
+                <span className="text-sm font-bold text-blue-600">{(summaryStats.totalSubscribers + summaryStats.subscribersDelta).toLocaleString()}</span>
               </div>
               {timePeriod !== 'current_month' && (
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{(currentMonthStats.totalSubscribers - calculatedDeltas.subscribersDelta).toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{summaryStats.totalSubscribers.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(calculatedDeltas.subscribersDelta, 'number')}
+                      {formatDelta(summaryStats.subscribersDelta, 'number')}
                     </div>
                   </div>
                 </>
@@ -807,23 +761,6 @@ export default function AccountMetricsTableMonthly() {
                       </div>
                     </div>
                   </th>
-                  {timePeriod !== 'current_month' && (
-                    <th className="p-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors text-right" onClick={() => handleSort('spend_delta')}>
-                      <div className="flex items-center gap-1">
-                        Spend Δ
-                        <div className="flex flex-col">
-                          <ChevronUp 
-                            size={12} 
-                            className={`${sortField === 'spend_delta' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
-                          />
-                          <ChevronDown 
-                            size={12} 
-                            className={`${sortField === 'spend_delta' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'} -mt-1`} 
-                          />
-                        </div>
-                      </div>
-                    </th>
-                  )}
                   <th className="p-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors text-right" onClick={() => handleSort('total_texts_delivered')}>
                     <div className="flex items-center gap-1">
                       Texts Delivered
@@ -839,23 +776,6 @@ export default function AccountMetricsTableMonthly() {
                       </div>
                     </div>
                   </th>
-                  {timePeriod !== 'current_month' && (
-                    <th className="p-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors text-right" onClick={() => handleSort('texts_delta')}>
-                      <div className="flex items-center gap-1">
-                        Texts Δ
-                        <div className="flex flex-col">
-                          <ChevronUp 
-                            size={12} 
-                            className={`${sortField === 'texts_delta' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
-                          />
-                          <ChevronDown 
-                            size={12} 
-                            className={`${sortField === 'texts_delta' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'} -mt-1`} 
-                          />
-                        </div>
-                      </div>
-                    </th>
-                  )}
                   <th className="p-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors text-right" onClick={() => handleSort('coupons_redeemed')}>
                     <div className="flex items-center gap-1">
                       Redemptions
@@ -871,23 +791,6 @@ export default function AccountMetricsTableMonthly() {
                       </div>
                     </div>
                   </th>
-                  {timePeriod !== 'current_month' && (
-                    <th className="p-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors text-right" onClick={() => handleSort('coupons_delta')}>
-                      <div className="flex items-center gap-1">
-                        Redemptions Δ
-                        <div className="flex flex-col">
-                          <ChevronUp 
-                            size={12} 
-                            className={`${sortField === 'coupons_delta' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
-                          />
-                          <ChevronDown 
-                            size={12} 
-                            className={`${sortField === 'coupons_delta' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'} -mt-1`} 
-                          />
-                        </div>
-                      </div>
-                    </th>
-                  )}
                   <th className="p-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors text-right" onClick={() => handleSort('active_subs_cnt')}>
                     <div className="flex items-center gap-1">
                       Subscribers
@@ -903,23 +806,6 @@ export default function AccountMetricsTableMonthly() {
                       </div>
                     </div>
                   </th>
-                  {timePeriod !== 'current_month' && (
-                    <th className="p-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors text-right" onClick={() => handleSort('subs_delta')}>
-                      <div className="flex items-center gap-1">
-                        Subscribers Δ
-                        <div className="flex flex-col">
-                          <ChevronUp 
-                            size={12} 
-                            className={`${sortField === 'subs_delta' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
-                          />
-                          <ChevronDown 
-                            size={12} 
-                            className={`${sortField === 'subs_delta' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'} -mt-1`} 
-                          />
-                        </div>
-                      </div>
-                    </th>
-                  )}
                   {timePeriod === 'current_month' && (
                     <>
                       <th className="p-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors text-left" onClick={() => handleSort('risk_level')}>
@@ -981,50 +867,10 @@ export default function AccountMetricsTableMonthly() {
                         {account.status}
                       </Badge>
                     </td>
-                    <td className="p-3 text-right font-mono text-sm">
-                      {formatCurrency(timePeriod === 'current_month' 
-                        ? account.total_spend 
-                        : (account.current_total_spend || 0)
-                      )}
-                    </td>
-                    {timePeriod !== 'current_month' && (
-                      <td className="p-3 text-right font-mono text-sm">
-                        {formatDelta((account.current_total_spend || 0) - (account.total_spend || 0), 'currency')}
-                      </td>
-                    )}
-                    <td className="p-3 text-right font-mono text-sm">
-                      {formatNumber(timePeriod === 'current_month' 
-                        ? account.total_texts_delivered 
-                        : (account.current_total_texts_delivered || 0)
-                      )}
-                    </td>
-                    {timePeriod !== 'current_month' && (
-                      <td className="p-3 text-right font-mono text-sm">
-                        {formatDelta((account.current_total_texts_delivered || 0) - (account.total_texts_delivered || 0), 'number')}
-                      </td>
-                    )}
-                    <td className="p-3 text-right font-mono text-sm">
-                      {formatNumber(timePeriod === 'current_month' 
-                        ? account.coupons_redeemed 
-                        : (account.current_coupons_redeemed || 0)
-                      )}
-                    </td>
-                    {timePeriod !== 'current_month' && (
-                      <td className="p-3 text-right font-mono text-sm">
-                        {formatDelta((account.current_coupons_redeemed || 0) - (account.coupons_redeemed || 0), 'number')}
-                      </td>
-                    )}
-                    <td className="p-3 text-right font-mono text-sm">
-                      {formatNumber(timePeriod === 'current_month' 
-                        ? account.active_subs_cnt 
-                        : (account.current_active_subs_cnt || 0)
-                      )}
-                    </td>
-                    {timePeriod !== 'current_month' && (
-                      <td className="p-3 text-right font-mono text-sm">
-                        {formatDelta((account.current_active_subs_cnt || 0) - (account.active_subs_cnt || 0), 'number')}
-                      </td>
-                    )}
+                    <td className="p-3 text-right font-mono text-sm">{formatCurrency(account.total_spend)}</td>
+                    <td className="p-3 text-right font-mono text-sm">{formatNumber(account.total_texts_delivered)}</td>
+                    <td className="p-3 text-right font-mono text-sm">{formatNumber(account.coupons_redeemed)}</td>
+                    <td className="p-3 text-right font-mono text-sm">{formatNumber(account.active_subs_cnt)}</td>
                     {timePeriod === 'current_month' && (
                       <>
                         <td className="p-3">
