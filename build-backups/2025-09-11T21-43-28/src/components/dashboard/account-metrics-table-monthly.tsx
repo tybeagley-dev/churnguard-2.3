@@ -1,6 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useQuery } from "@tanstack/react-query";
@@ -62,36 +61,6 @@ const formatRiskFlags = (flags?: { monthlyRedemptionsFlag: boolean; lowActivityF
   return activeFlags.length > 0 ? activeFlags.join(', ') : 'No flags';
 };
 
-// Helper function to extract individual risk reasons for filtering
-const getRiskReasons = (account: AccountMetric, isForTrending: boolean = false): string[] => {
-  const flags = isForTrending ? account.trending_risk_flags : account.risk_flags;
-  const reasons: string[] = [];
-  
-  // Handle FROZEN accounts specially
-  if (account.status === 'FROZEN') {
-    reasons.push('Frozen Account Status');
-    // Check if it's also inactive (no specific logic in current code, so we'll use a placeholder)
-    // This would need to be enhanced with actual last text date logic
-    if (account.risk_reason && account.risk_reason.includes('1+ month')) {
-      reasons.push('Frozen & Inactive');
-    }
-    return reasons;
-  }
-  
-  // Handle regular flag-based reasons
-  if (flags?.monthlyRedemptionsFlag) reasons.push('Low Monthly Redemptions');
-  if (flags?.lowActivityFlag) reasons.push('Low Activity');  
-  if (flags?.spendDropFlag) reasons.push('Spend Drop');
-  if (flags?.redemptionsDropFlag) reasons.push('Redemptions Drop');
-  
-  // Note: We don't currently have data for:
-  // - Low Engagement Combo (would need separate flag)
-  // - Recently Archived (would need status check)
-  // These would need to be added to the backend data structure
-  
-  return reasons.length > 0 ? reasons : ['No flags'];
-};
-
 export default function AccountMetricsTableMonthly() {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState<SortField>('name');
@@ -99,11 +68,6 @@ export default function AccountMetricsTableMonthly() {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('current_month');
   const [selectedCSMs, setSelectedCSMs] = useState<string[]>([]);
   const [selectedRiskLevel, setSelectedRiskLevel] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedTrendingRiskLevel, setSelectedTrendingRiskLevel] = useState<string>('all');
-  const [selectedRiskReasons, setSelectedRiskReasons] = useState<string[]>([]);
-  const [selectedTrendingRiskReasons, setSelectedTrendingRiskReasons] = useState<string[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedAccountName, setSelectedAccountName] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -269,7 +233,7 @@ export default function AccountMetricsTableMonthly() {
     return calculateTrendingRisk(account).trending_risk_level;
   };
 
-  const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels, uniqueStatuses, uniqueTrendingRiskLevels, uniqueRiskReasons, uniqueTrendingRiskReasons } = useMemo(() => {
+  const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels } = useMemo(() => {
     if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
       return { 
         sortedAccounts: [], 
@@ -277,10 +241,6 @@ export default function AccountMetricsTableMonthly() {
         totalPages: 0,
         uniqueCSMs: [],
         uniqueRiskLevels: [],
-        uniqueStatuses: [],
-        uniqueTrendingRiskLevels: [],
-        uniqueRiskReasons: [],
-        uniqueTrendingRiskReasons: [],
         summaryStats: {
           totalAccounts: 0,
           highRiskCount: 0,
@@ -309,26 +269,18 @@ export default function AccountMetricsTableMonthly() {
       };
     }
 
+    // Get unique CSMs and risk levels for filter options
+    const uniqueCSMs = Array.from(new Set(accounts.map(acc => acc.csm).filter(Boolean))).sort();
+    const uniqueRiskLevels = Array.from(new Set(accounts.map(acc => acc.riskLevel || acc.risk_level).filter(Boolean))).sort();
 
-    // Add trending risk level, flags, and delta calculations to accounts
+    // Add trending risk level and flags calculation to accounts
     const accountsWithTrending = accounts.map(account => {
-      // Calculate delta fields for sorting (current - comparison)
-      const spend_delta = (account.current_total_spend || 0) - (account.total_spend || 0);
-      const texts_delta = (account.current_total_texts_delivered || 0) - (account.total_texts_delivered || 0);
-      const coupons_delta = (account.current_coupons_redeemed || 0) - (account.coupons_redeemed || 0);
-      const subs_delta = (account.current_active_subs_cnt || 0) - (account.active_subs_cnt || 0);
-      
       // For FROZEN accounts, use the risk data from the API which is already correctly calculated
       if (account.status === 'FROZEN') {
         return {
           ...account,
           trending_risk_level: account.trending_risk_level || account.riskLevel,
-          trending_risk_flags: null, // FROZEN accounts don't use traditional flag system
-          // Add calculated deltas for sorting
-          spend_delta,
-          texts_delta,
-          coupons_delta,
-          subs_delta
+          trending_risk_flags: null // FROZEN accounts don't use traditional flag system
         };
       }
       
@@ -338,77 +290,19 @@ export default function AccountMetricsTableMonthly() {
       return {
         ...account,
         trending_risk_level: trendingRisk.trending_risk_level,
-        trending_risk_flags: trendingRisk.trending_risk_flags,
-        // Add calculated deltas for sorting
-        spend_delta,
-        texts_delta,
-        coupons_delta,
-        subs_delta
+        trending_risk_flags: trendingRisk.trending_risk_flags
       };
     });
 
-    // Get unique values for all filter options
-    const uniqueCSMs = Array.from(new Set(accountsWithTrending.map(acc => acc.csm).filter(Boolean))).sort();
-    const uniqueRiskLevels = Array.from(new Set(accountsWithTrending.map(acc => acc.riskLevel || acc.risk_level).filter(Boolean))).sort();
-    const uniqueStatuses = Array.from(new Set(accountsWithTrending.map(acc => acc.status).filter(Boolean))).sort();
-    const uniqueTrendingRiskLevels = Array.from(new Set(accountsWithTrending.map(acc => acc.trending_risk_level).filter(Boolean))).sort();
-    
-    // Get unique risk reasons from all accounts
-    const allRiskReasons = new Set<string>();
-    const allTrendingRiskReasons = new Set<string>();
-    
-    accountsWithTrending.forEach(acc => {
-      getRiskReasons(acc, false).forEach(reason => allRiskReasons.add(reason));
-      getRiskReasons(acc, true).forEach(reason => allTrendingRiskReasons.add(reason));
-    });
-    
-    const uniqueRiskReasons = Array.from(allRiskReasons).sort();
-    const uniqueTrendingRiskReasons = Array.from(allTrendingRiskReasons).sort();
-
-    // Filter accounts based on search, status, CSMs, and risk level
+    // Filter accounts based on selected CSMs and risk level
     let filteredAccounts = accountsWithTrending;
     
-    // Search filter (search in account names)
-    if (searchQuery.trim()) {
-      filteredAccounts = filteredAccounts.filter(acc => 
-        acc.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
-      );
-    }
-    
-    // Status filter
-    if (selectedStatus !== 'all') {
-      filteredAccounts = filteredAccounts.filter(acc => acc.status === selectedStatus);
-    }
-    
-    // CSM filter
     if (selectedCSMs.length > 0) {
       filteredAccounts = filteredAccounts.filter(acc => selectedCSMs.includes(acc.csm));
     }
     
-    // Risk level filter
     if (selectedRiskLevel !== 'all') {
       filteredAccounts = filteredAccounts.filter(acc => (acc.riskLevel || acc.risk_level) === selectedRiskLevel);
-    }
-    
-    // Trending risk level filter
-    if (selectedTrendingRiskLevel !== 'all') {
-      filteredAccounts = filteredAccounts.filter(acc => acc.trending_risk_level === selectedTrendingRiskLevel);
-    }
-    
-    // Risk reasons filter
-    if (selectedRiskReasons.length > 0) {
-      filteredAccounts = filteredAccounts.filter(acc => {
-        const accountRiskReasons = getRiskReasons(acc, false);
-        return selectedRiskReasons.some(reason => accountRiskReasons.includes(reason));
-      });
-    }
-    
-    // Trending risk reasons filter
-    if (selectedTrendingRiskReasons.length > 0) {
-      filteredAccounts = filteredAccounts.filter(acc => {
-        const accountTrendingRiskReasons = getRiskReasons(acc, true);
-        return selectedTrendingRiskReasons.some(reason => accountTrendingRiskReasons.includes(reason));
-      });
     }
 
     // Calculate summary statistics for filtered data
@@ -448,24 +342,10 @@ export default function AccountMetricsTableMonthly() {
       // Filter currentMonthData based on the same filters
       let filteredCurrentMonthData = currentMonthData;
       
-      // Search filter
-      if (searchQuery.trim()) {
-        filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => 
-          acc.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
-        );
-      }
-      
-      // Status filter
-      if (selectedStatus !== 'all') {
-        filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => acc.status === selectedStatus);
-      }
-      
-      // CSM filter
       if (selectedCSMs.length > 0) {
         filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => selectedCSMs.includes(acc.csm));
       }
       
-      // Risk level filter
       if (selectedRiskLevel !== 'all') {
         filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => (acc.riskLevel || acc.risk_level) === selectedRiskLevel);
       }
@@ -504,24 +384,10 @@ export default function AccountMetricsTableMonthly() {
       // Filter currentMonthData based on the same filters
       let filteredCurrentMonthData = currentMonthData;
       
-      // Search filter
-      if (searchQuery.trim()) {
-        filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => 
-          acc.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
-        );
-      }
-      
-      // Status filter
-      if (selectedStatus !== 'all') {
-        filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => acc.status === selectedStatus);
-      }
-      
-      // CSM filter
       if (selectedCSMs.length > 0) {
         filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => selectedCSMs.includes(acc.csm));
       }
       
-      // Risk level filter
       if (selectedRiskLevel !== 'all') {
         filteredCurrentMonthData = filteredCurrentMonthData.filter((acc: AccountMetric) => (acc.riskLevel || acc.risk_level) === selectedRiskLevel);
       }
@@ -552,15 +418,10 @@ export default function AccountMetricsTableMonthly() {
 
     // Sort accounts
     const sortedAccounts = [...filteredAccounts].sort((a, b) => {
-      let aValue: any, bValue: any;
+      let aValue, bValue;
       
-      // Handle delta fields - they're now properly added to account objects
-      if (sortField === 'spend_delta' || sortField === 'texts_delta' || 
-          sortField === 'coupons_delta' || sortField === 'subs_delta') {
-        aValue = a[sortField];
-        bValue = b[sortField];
-      } else if (sortField === 'risk_level') {
-        // Handle the risk_level field specifically since it might be stored as either 'riskLevel' or 'risk_level'
+      // Handle the risk_level field specifically since it might be stored as either 'riskLevel' or 'risk_level'
+      if (sortField === 'risk_level') {
         aValue = a.riskLevel || a.risk_level;
         bValue = b.riskLevel || b.risk_level;
         
@@ -577,28 +438,16 @@ export default function AccountMetricsTableMonthly() {
         bValue = b[sortField];
       }
       
-      // Handle null/undefined values - for delta fields, treat as 0
-      if (sortField.endsWith('_delta')) {
-        aValue = aValue ?? 0;
-        bValue = bValue ?? 0;
-      } else {
-        if (aValue == null) aValue = '';
-        if (bValue == null) bValue = '';
-      }
+      // Handle null/undefined values
+      if (aValue == null) aValue = '';
+      if (bValue == null) bValue = '';
       
-      // Handle numeric fields (including delta fields)
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
-      }
-      
-      // Handle string fields
       if (typeof aValue === 'string' && typeof bValue === 'string') {
         return sortDirection === 'asc' 
           ? aValue.localeCompare(bValue)
           : bValue.localeCompare(aValue);
       }
       
-      // Fallback to numeric comparison
       const aNum = Number(aValue) || 0;
       const bNum = Number(bValue) || 0;
       
@@ -610,8 +459,8 @@ export default function AccountMetricsTableMonthly() {
     const paginatedAccounts = sortedAccounts.slice(startIndex, startIndex + accountsPerPage);
     const totalPages = Math.ceil(sortedAccounts.length / accountsPerPage);
 
-    return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels, uniqueStatuses, uniqueTrendingRiskLevels, uniqueRiskReasons, uniqueTrendingRiskReasons };
-  }, [accounts, selectedCSMs, selectedRiskLevel, searchQuery, selectedStatus, selectedTrendingRiskLevel, selectedRiskReasons, selectedTrendingRiskReasons, sortField, sortDirection, currentPage, timePeriod, calculateTrendingRiskLevel]);
+    return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels };
+  }, [accounts, selectedCSMs, selectedRiskLevel, sortField, sortDirection, currentPage, timePeriod, calculateTrendingRiskLevel]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', { 
@@ -713,37 +562,7 @@ export default function AccountMetricsTableMonthly() {
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-4 mb-4">
-            {timePeriod !== 'current_month' && (
-              <>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Search:</label>
-                  <Input
-                    type="text"
-                    placeholder="Search account names..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                    className="w-48"
-                  />
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Status:</label>
-                  <Select value={selectedStatus} onValueChange={(value) => { setSelectedStatus(value); setCurrentPage(1); }}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All Statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      {uniqueStatuses.map((status) => (
-                        <SelectItem key={status} value={status}>{status}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-            
+          <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-gray-700">CSM:</label>
               <MultiSelect
@@ -755,83 +574,20 @@ export default function AccountMetricsTableMonthly() {
             </div>
             
             {timePeriod === 'current_month' && (
-              <>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Search:</label>
-                  <Input
-                    type="text"
-                    placeholder="Search account names..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                    className="w-48"
-                  />
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Status:</label>
-                  <Select value={selectedStatus} onValueChange={(value) => { setSelectedStatus(value); setCurrentPage(1); }}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All Statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      {uniqueStatuses.map((status) => (
-                        <SelectItem key={status} value={status}>{status}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Risk Level:</label>
-                  <Select value={selectedRiskLevel} onValueChange={(value) => { setSelectedRiskLevel(value); setCurrentPage(1); }}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue placeholder="All Levels" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Levels</SelectItem>
-                      {uniqueRiskLevels.map((level) => (
-                        <SelectItem key={level} value={level}>{level}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Trending Risk:</label>
-                  <Select value={selectedTrendingRiskLevel} onValueChange={(value) => { setSelectedTrendingRiskLevel(value); setCurrentPage(1); }}>
-                    <SelectTrigger className="w-36">
-                      <SelectValue placeholder="All Trending" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Trending</SelectItem>
-                      {uniqueTrendingRiskLevels.map((level) => (
-                        <SelectItem key={level} value={level}>{level}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Risk Reasons:</label>
-                  <MultiSelect
-                    options={uniqueRiskReasons}
-                    value={selectedRiskReasons}
-                    onChange={(value) => { setSelectedRiskReasons(value); setCurrentPage(1); }}
-                    placeholder="All Risk Reasons"
-                  />
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Trending Reasons:</label>
-                  <MultiSelect
-                    options={uniqueTrendingRiskReasons}
-                    value={selectedTrendingRiskReasons}
-                    onChange={(value) => { setSelectedTrendingRiskReasons(value); setCurrentPage(1); }}
-                    placeholder="All Trending Reasons"
-                  />
-                </div>
-              </>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700">Risk Level:</label>
+                <Select value={selectedRiskLevel} onValueChange={(value) => { setSelectedRiskLevel(value); setCurrentPage(1); }}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue placeholder="All Levels" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Levels</SelectItem>
+                    {uniqueRiskLevels.map((level) => (
+                      <SelectItem key={level} value={level}>{level}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
             
             <div className="text-sm text-gray-600 ml-auto">

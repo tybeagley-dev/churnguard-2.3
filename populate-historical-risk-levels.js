@@ -56,7 +56,13 @@ class HistoricalRiskPopulator {
     // FROZEN accounts logic
     if (accountData.status === 'FROZEN') {
       const hasCurrentMonthTexts = monthData.total_texts_delivered > 0;
-      return hasCurrentMonthTexts ? 'medium' : 'high';
+      
+      // Check if it's been 1+ month since last text (Frozen & Inactive)
+      // For now, we'll use a simple heuristic: if no texts this month = inactive
+      // A more sophisticated approach would track actual last text date
+      const isFrozenAndInactive = !hasCurrentMonthTexts;
+      
+      return isFrozenAndInactive ? 'high' : 'medium';
     }
 
     // LAUNCHED/ACTIVE accounts: Flag-based system
@@ -77,8 +83,8 @@ class HistoricalRiskPopulator {
       }
     }
     
-    // Flag 3: Low Activity (< 300 subscribers per account) - 1 point
-    if (monthData.avg_active_subs_cnt < this.LOW_ACTIVITY_SUBS_THRESHOLD) {
+    // Flag 3: Low Activity (< 300 subscribers) - 1 point
+    if (monthData.avg_active_subs_cnt < 300) {
       flagCount++;
     }
     

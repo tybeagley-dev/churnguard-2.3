@@ -196,76 +196,478 @@ app.get("/api/accounts", async (req, res) => {
 });
 
 app.get("/api/bigquery/accounts", async (req, res) => {
-  // Weekly View accounts endpoint - show raw week-to-date data
+  // Weekly View accounts endpoint - unified approach with delta calculations
   try {
-    const currentDate = new Date();
-    const { risk_level } = req.query;
+    const { period = 'current_week', risk_level } = req.query;
     
-    console.log('Weekly View - Risk level filter requested:', risk_level);
+    console.log(`📅 Weekly API: period=${period}`);
     
-    // Calculate current week dates (Monday to today)
-    const today = new Date(currentDate);
+    const today = new Date();
     const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
     const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Get Monday of current week
     
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + mondayOffset);
-    monday.setHours(0, 0, 0, 0);
+    const currentWeekStart = new Date(today);
+    currentWeekStart.setDate(today.getDate() + mondayOffset);
+    currentWeekStart.setHours(0, 0, 0, 0);
     
-    const startOfWeek = monday.toISOString().split('T')[0]; // YYYY-MM-DD format
-    const currentDateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const currentWeekEnd = new Date(); // Through today
     
-    console.log(`Weekly View: ${startOfWeek} to ${currentDateStr}`);
+    const currentWeekStartStr = currentWeekStart.toISOString().split('T')[0];
+    const currentWeekEndStr = currentWeekEnd.toISOString().split('T')[0];
     
-    // Get raw WTD data from daily_metrics (current week only)
-    const rawAccounts = await db.all(`
-      SELECT 
-        a.account_id,
-        a.account_name,
-        a.status,
-        a.csm_owner,
-        a.launched_at,
-        
-        -- Current week totals from daily_metrics (WTD) - NO proportional calculations
-        COALESCE(wtd.total_spend, 0) as total_spend,
-        COALESCE(wtd.total_texts_delivered, 0) as total_texts_delivered,
-        COALESCE(wtd.total_coupons_redeemed, 0) as coupons_redeemed,
-        COALESCE(ROUND(wtd.avg_active_subs_cnt), 0) as active_subs_cnt
-        
-      FROM accounts a
-      LEFT JOIN (
+    let accounts;
+    
+    if (period === 'current_week') {
+      // Current WTD: Raw weekly data (no deltas) - Use same account base as monthly view
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      
+      accounts = await db.all(`
         SELECT 
-          account_id,
-          AVG(active_subs_cnt) as avg_active_subs_cnt,
-          SUM(coupons_redeemed) as total_coupons_redeemed,
-          SUM(total_spend) as total_spend,
-          SUM(total_texts_delivered) as total_texts_delivered
-        FROM daily_metrics 
-        WHERE date >= ? AND date <= ?
-        GROUP BY account_id
-      ) wtd ON a.account_id = wtd.account_id
-      WHERE (
-        -- Apply same filtering as Monthly View
-        DATE(a.launched_at) <= DATE(?)
-        AND (
-          (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-          OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(?)
+          a.account_id,
+          a.account_name as name,
+          a.status,
+          a.csm_owner as csm,
+          a.launched_at,
+          
+          -- Current week totals from daily_metrics (default to 0 if no weekly activity)
+          COALESCE(wtd.total_spend, 0) as total_spend,
+          COALESCE(wtd.total_texts_delivered, 0) as total_texts_delivered,
+          COALESCE(wtd.total_coupons_redeemed, 0) as coupons_redeemed,
+          COALESCE(ROUND(COALESCE(wtd.avg_active_subs_cnt, mm.avg_active_subs_cnt)), 0) as active_subs_cnt
+          
+        FROM accounts a
+        INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id 
+          AND mm.month = ? 
+          AND mm.month_status = 'current'
+        LEFT JOIN (
+          SELECT 
+            account_id,
+            AVG(active_subs_cnt) as avg_active_subs_cnt,
+            SUM(coupons_redeemed) as total_coupons_redeemed,
+            SUM(total_spend) as total_spend,
+            SUM(total_texts_delivered) as total_texts_delivered
+          FROM daily_metrics 
+          WHERE date >= ? AND date <= ?
+          GROUP BY account_id
+        ) wtd ON a.account_id = wtd.account_id
+        WHERE (
+          DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+          AND (
+            (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+            OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(? || '-01')
+          )
         )
-      )
-    `, startOfWeek, currentDateStr, currentDateStr, startOfWeek);
+      `, currentMonth, currentWeekStartStr, currentWeekEndStr, currentMonth, currentMonth);
+      
+      
+    } else if (period === 'previous_week') {
+      // Previous week comparison with unified dataset and deltas
+      
+      const prevWeekStart = new Date(currentWeekStart);
+      prevWeekStart.setDate(currentWeekStart.getDate() - 7);
+      const prevWeekEnd = new Date(currentWeekEnd);
+      prevWeekEnd.setDate(currentWeekEnd.getDate() - 7);
+      
+      const prevWeekStartStr = prevWeekStart.toISOString().split('T')[0];
+      const prevWeekEndStr = prevWeekEnd.toISOString().split('T')[0];
+      
+      accounts = await db.all(`
+        WITH all_relevant_accounts AS (
+          SELECT DISTINCT account_id
+          FROM accounts a
+          WHERE (
+            DATE(a.launched_at) <= DATE(?)
+            AND (
+              (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+              OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(?)
+            )
+          )
+        ),
+        current_week_data AS (
+          SELECT 
+            ara.account_id,
+            a.account_name as name,
+            a.status,
+            a.csm_owner as csm,
+            a.launched_at,
+            COALESCE(cwd.total_spend, 0) as current_total_spend,
+            COALESCE(cwd.total_texts_delivered, 0) as current_total_texts_delivered,
+            COALESCE(cwd.total_coupons_redeemed, 0) as current_coupons_redeemed,
+            COALESCE(ROUND(cwd.avg_active_subs_cnt), 0) as current_active_subs_cnt
+          FROM all_relevant_accounts ara
+          LEFT JOIN accounts a ON ara.account_id = a.account_id
+          LEFT JOIN (
+            SELECT 
+              account_id,
+              AVG(active_subs_cnt) as avg_active_subs_cnt,
+              SUM(coupons_redeemed) as total_coupons_redeemed,
+              SUM(total_spend) as total_spend,
+              SUM(total_texts_delivered) as total_texts_delivered
+            FROM daily_metrics 
+            WHERE date >= ? AND date <= ?
+            GROUP BY account_id
+          ) cwd ON ara.account_id = cwd.account_id
+        ),
+        previous_week_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(pwd.total_spend, 0) as total_spend,
+            COALESCE(pwd.total_texts_delivered, 0) as total_texts_delivered,
+            COALESCE(pwd.total_coupons_redeemed, 0) as coupons_redeemed,
+            COALESCE(ROUND(pwd.avg_active_subs_cnt), 0) as active_subs_cnt
+          FROM all_relevant_accounts ara
+          LEFT JOIN (
+            SELECT 
+              account_id,
+              AVG(active_subs_cnt) as avg_active_subs_cnt,
+              SUM(coupons_redeemed) as total_coupons_redeemed,
+              SUM(total_spend) as total_spend,
+              SUM(total_texts_delivered) as total_texts_delivered
+            FROM daily_metrics 
+            WHERE date >= ? AND date <= ?
+            GROUP BY account_id
+          ) pwd ON ara.account_id = pwd.account_id
+        )
+        SELECT 
+          cwd.account_id,
+          cwd.name,
+          cwd.status,
+          cwd.csm,
+          cwd.launched_at,
+          -- Previous week values in main columns (comparison period)
+          pwd.total_spend,
+          pwd.total_texts_delivered,
+          pwd.coupons_redeemed,
+          pwd.active_subs_cnt,
+          -- Current week values in current_* columns
+          cwd.current_total_spend,
+          cwd.current_total_texts_delivered,
+          cwd.current_coupons_redeemed,
+          cwd.current_active_subs_cnt,
+          -- Delta calculations (current - previous)
+          (cwd.current_total_spend - pwd.total_spend) as spend_delta,
+          (cwd.current_total_texts_delivered - pwd.total_texts_delivered) as texts_delta,
+          (cwd.current_coupons_redeemed - pwd.coupons_redeemed) as coupons_delta,
+          (cwd.current_active_subs_cnt - pwd.active_subs_cnt) as subs_delta
+        FROM current_week_data cwd
+        LEFT JOIN previous_week_data pwd ON cwd.account_id = pwd.account_id
+        ORDER BY cwd.current_total_spend DESC
+      `, currentWeekEndStr, prevWeekEndStr, currentWeekStartStr, currentWeekEndStr, prevWeekStartStr, prevWeekEndStr);
+      
+    } else if (period === 'six_week_average') {
+      // Six week average comparison
+      
+      const sixWeeksAgo = new Date(currentWeekStart);
+      sixWeeksAgo.setDate(currentWeekStart.getDate() - (6 * 7)); // 6 weeks back
+      const oneWeekAgo = new Date(currentWeekStart);
+      oneWeekAgo.setDate(currentWeekStart.getDate() - 1); // End just before current week
+      
+      const sixWeeksAgoStr = sixWeeksAgo.toISOString().split('T')[0];
+      const oneWeekAgoStr = oneWeekAgo.toISOString().split('T')[0];
+      
+      accounts = await db.all(`
+        WITH all_relevant_accounts AS (
+          SELECT DISTINCT account_id
+          FROM accounts a
+          WHERE (
+            DATE(a.launched_at) <= DATE(?)
+            AND (
+              (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+              OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(?)
+            )
+          )
+        ),
+        current_week_data AS (
+          SELECT 
+            ara.account_id,
+            a.account_name as name,
+            a.status,
+            a.csm_owner as csm,
+            a.launched_at,
+            COALESCE(cwd.total_spend, 0) as current_total_spend,
+            COALESCE(cwd.total_texts_delivered, 0) as current_total_texts_delivered,
+            COALESCE(cwd.total_coupons_redeemed, 0) as current_coupons_redeemed,
+            COALESCE(ROUND(cwd.avg_active_subs_cnt), 0) as current_active_subs_cnt
+          FROM all_relevant_accounts ara
+          LEFT JOIN accounts a ON ara.account_id = a.account_id
+          LEFT JOIN (
+            SELECT 
+              account_id,
+              AVG(active_subs_cnt) as avg_active_subs_cnt,
+              SUM(coupons_redeemed) as total_coupons_redeemed,
+              SUM(total_spend) as total_spend,
+              SUM(total_texts_delivered) as total_texts_delivered
+            FROM daily_metrics 
+            WHERE date >= ? AND date <= ?
+            GROUP BY account_id
+          ) cwd ON ara.account_id = cwd.account_id
+        ),
+        six_week_avg_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(ROUND(swd.avg_total_spend), 0) as total_spend,
+            COALESCE(ROUND(swd.avg_total_texts_delivered), 0) as total_texts_delivered,
+            COALESCE(ROUND(swd.avg_total_coupons_redeemed), 0) as coupons_redeemed,
+            COALESCE(ROUND(swd.avg_active_subs_cnt), 0) as active_subs_cnt
+          FROM all_relevant_accounts ara
+          LEFT JOIN (
+            -- Get 6-week average by week
+            SELECT 
+              account_id,
+              AVG(weekly_spend) as avg_total_spend,
+              AVG(weekly_texts) as avg_total_texts_delivered,
+              AVG(weekly_coupons) as avg_total_coupons_redeemed,
+              AVG(weekly_subs) as avg_active_subs_cnt
+            FROM (
+              SELECT 
+                account_id,
+                strftime('%Y-%W', date) as week,
+                SUM(total_spend) as weekly_spend,
+                SUM(total_texts_delivered) as weekly_texts,
+                SUM(coupons_redeemed) as weekly_coupons,
+                AVG(active_subs_cnt) as weekly_subs
+              FROM daily_metrics
+              WHERE date >= ? AND date <= ?
+              GROUP BY account_id, strftime('%Y-%W', date)
+            )
+            GROUP BY account_id
+          ) swd ON ara.account_id = swd.account_id
+        )
+        SELECT 
+          cwd.account_id,
+          cwd.name,
+          cwd.status,
+          cwd.csm,
+          cwd.launched_at,
+          -- Six week average values in main columns (comparison period)
+          swd.total_spend,
+          swd.total_texts_delivered,
+          swd.coupons_redeemed,
+          swd.active_subs_cnt,
+          -- Current week values in current_* columns
+          cwd.current_total_spend,
+          cwd.current_total_texts_delivered,
+          cwd.current_coupons_redeemed,
+          cwd.current_active_subs_cnt,
+          -- Delta calculations (current - six week average)
+          (cwd.current_total_spend - swd.total_spend) as spend_delta,
+          (cwd.current_total_texts_delivered - swd.total_texts_delivered) as texts_delta,
+          (cwd.current_coupons_redeemed - swd.coupons_redeemed) as coupons_delta,
+          (cwd.current_active_subs_cnt - swd.active_subs_cnt) as subs_delta
+        FROM current_week_data cwd
+        LEFT JOIN six_week_avg_data swd ON cwd.account_id = swd.account_id
+        ORDER BY cwd.current_total_spend DESC
+      `, currentWeekEndStr, sixWeeksAgoStr, currentWeekStartStr, currentWeekEndStr, sixWeeksAgoStr, oneWeekAgoStr);
+      
+    } else if (period === 'same_week_last_year') {
+      // Same week last year comparison
+      
+      const lastYearWeekStart = new Date(currentWeekStart);
+      lastYearWeekStart.setFullYear(currentWeekStart.getFullYear() - 1);
+      const lastYearWeekEnd = new Date(currentWeekEnd);
+      lastYearWeekEnd.setFullYear(currentWeekEnd.getFullYear() - 1);
+      
+      const lastYearWeekStartStr = lastYearWeekStart.toISOString().split('T')[0];
+      const lastYearWeekEndStr = lastYearWeekEnd.toISOString().split('T')[0];
+      
+      accounts = await db.all(`
+        WITH all_relevant_accounts AS (
+          SELECT DISTINCT account_id
+          FROM accounts a
+          WHERE (
+            DATE(a.launched_at) <= DATE(?)
+            AND (
+              (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+              OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(?)
+            )
+          )
+        ),
+        current_week_data AS (
+          SELECT 
+            ara.account_id,
+            a.account_name as name,
+            a.status,
+            a.csm_owner as csm,
+            a.launched_at,
+            COALESCE(cwd.total_spend, 0) as current_total_spend,
+            COALESCE(cwd.total_texts_delivered, 0) as current_total_texts_delivered,
+            COALESCE(cwd.total_coupons_redeemed, 0) as current_coupons_redeemed,
+            COALESCE(ROUND(cwd.avg_active_subs_cnt), 0) as current_active_subs_cnt
+          FROM all_relevant_accounts ara
+          LEFT JOIN accounts a ON ara.account_id = a.account_id
+          LEFT JOIN (
+            SELECT 
+              account_id,
+              AVG(active_subs_cnt) as avg_active_subs_cnt,
+              SUM(coupons_redeemed) as total_coupons_redeemed,
+              SUM(total_spend) as total_spend,
+              SUM(total_texts_delivered) as total_texts_delivered
+            FROM daily_metrics 
+            WHERE date >= ? AND date <= ?
+            GROUP BY account_id
+          ) cwd ON ara.account_id = cwd.account_id
+        ),
+        last_year_week_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(lwd.total_spend, 0) as total_spend,
+            COALESCE(lwd.total_texts_delivered, 0) as total_texts_delivered,
+            COALESCE(lwd.total_coupons_redeemed, 0) as coupons_redeemed,
+            COALESCE(ROUND(lwd.avg_active_subs_cnt), 0) as active_subs_cnt
+          FROM all_relevant_accounts ara
+          LEFT JOIN (
+            SELECT 
+              account_id,
+              AVG(active_subs_cnt) as avg_active_subs_cnt,
+              SUM(coupons_redeemed) as total_coupons_redeemed,
+              SUM(total_spend) as total_spend,
+              SUM(total_texts_delivered) as total_texts_delivered
+            FROM daily_metrics 
+            WHERE date >= ? AND date <= ?
+            GROUP BY account_id
+          ) lwd ON ara.account_id = lwd.account_id
+        )
+        SELECT 
+          cwd.account_id,
+          cwd.name,
+          cwd.status,
+          cwd.csm,
+          cwd.launched_at,
+          -- Last year same week values in main columns (comparison period)
+          lwd.total_spend,
+          lwd.total_texts_delivered,
+          lwd.coupons_redeemed,
+          lwd.active_subs_cnt,
+          -- Current week values in current_* columns
+          cwd.current_total_spend,
+          cwd.current_total_texts_delivered,
+          cwd.current_coupons_redeemed,
+          cwd.current_active_subs_cnt,
+          -- Delta calculations (current - last year same week)
+          (cwd.current_total_spend - lwd.total_spend) as spend_delta,
+          (cwd.current_total_texts_delivered - lwd.total_texts_delivered) as texts_delta,
+          (cwd.current_coupons_redeemed - lwd.coupons_redeemed) as coupons_delta,
+          (cwd.current_active_subs_cnt - lwd.active_subs_cnt) as subs_delta
+        FROM current_week_data cwd
+        LEFT JOIN last_year_week_data lwd ON cwd.account_id = lwd.account_id
+        ORDER BY cwd.current_total_spend DESC
+      `, currentWeekEndStr, lastYearWeekEndStr, currentWeekStartStr, currentWeekEndStr, lastYearWeekStartStr, lastYearWeekEndStr);
+      
+    } else if (period === 'same_week_last_month') {
+      // Same week last month comparison (4 weeks ago)
+      
+      const lastMonthWeekStart = new Date(currentWeekStart);
+      lastMonthWeekStart.setDate(currentWeekStart.getDate() - 28); // 4 weeks ago
+      const lastMonthWeekEnd = new Date(currentWeekEnd);
+      lastMonthWeekEnd.setDate(currentWeekEnd.getDate() - 28);
+      
+      const lastMonthWeekStartStr = lastMonthWeekStart.toISOString().split('T')[0];
+      const lastMonthWeekEndStr = lastMonthWeekEnd.toISOString().split('T')[0];
+      
+      accounts = await db.all(`
+        WITH all_relevant_accounts AS (
+          SELECT DISTINCT account_id
+          FROM accounts a
+          WHERE (
+            DATE(a.launched_at) <= DATE(?)
+            AND (
+              (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+              OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(?)
+            )
+          )
+        ),
+        current_week_data AS (
+          SELECT 
+            ara.account_id,
+            a.account_name as name,
+            a.status,
+            a.csm_owner as csm,
+            a.launched_at,
+            COALESCE(cwd.total_spend, 0) as current_total_spend,
+            COALESCE(cwd.total_texts_delivered, 0) as current_total_texts_delivered,
+            COALESCE(cwd.total_coupons_redeemed, 0) as current_coupons_redeemed,
+            COALESCE(ROUND(cwd.avg_active_subs_cnt), 0) as current_active_subs_cnt
+          FROM all_relevant_accounts ara
+          LEFT JOIN accounts a ON ara.account_id = a.account_id
+          LEFT JOIN (
+            SELECT 
+              account_id,
+              AVG(active_subs_cnt) as avg_active_subs_cnt,
+              SUM(coupons_redeemed) as total_coupons_redeemed,
+              SUM(total_spend) as total_spend,
+              SUM(total_texts_delivered) as total_texts_delivered
+            FROM daily_metrics 
+            WHERE date >= ? AND date <= ?
+            GROUP BY account_id
+          ) cwd ON ara.account_id = cwd.account_id
+        ),
+        last_month_week_data AS (
+          SELECT 
+            ara.account_id,
+            COALESCE(lmwd.total_spend, 0) as total_spend,
+            COALESCE(lmwd.total_texts_delivered, 0) as total_texts_delivered,
+            COALESCE(lmwd.total_coupons_redeemed, 0) as coupons_redeemed,
+            COALESCE(ROUND(lmwd.avg_active_subs_cnt), 0) as active_subs_cnt
+          FROM all_relevant_accounts ara
+          LEFT JOIN (
+            SELECT 
+              account_id,
+              AVG(active_subs_cnt) as avg_active_subs_cnt,
+              SUM(coupons_redeemed) as total_coupons_redeemed,
+              SUM(total_spend) as total_spend,
+              SUM(total_texts_delivered) as total_texts_delivered
+            FROM daily_metrics 
+            WHERE date >= ? AND date <= ?
+            GROUP BY account_id
+          ) lmwd ON ara.account_id = lmwd.account_id
+        )
+        SELECT 
+          cwd.account_id,
+          cwd.name,
+          cwd.status,
+          cwd.csm,
+          cwd.launched_at,
+          -- Last month same week values in main columns (comparison period)
+          lmwd.total_spend,
+          lmwd.total_texts_delivered,
+          lmwd.coupons_redeemed,
+          lmwd.active_subs_cnt,
+          -- Current week values in current_* columns
+          cwd.current_total_spend,
+          cwd.current_total_texts_delivered,
+          cwd.current_coupons_redeemed,
+          cwd.current_active_subs_cnt,
+          -- Delta calculations (current - last month same week)
+          (cwd.current_total_spend - lmwd.total_spend) as spend_delta,
+          (cwd.current_total_texts_delivered - lmwd.total_texts_delivered) as texts_delta,
+          (cwd.current_coupons_redeemed - lmwd.coupons_redeemed) as coupons_delta,
+          (cwd.current_active_subs_cnt - lmwd.active_subs_cnt) as subs_delta
+        FROM current_week_data cwd
+        LEFT JOIN last_month_week_data lmwd ON cwd.account_id = lmwd.account_id
+        ORDER BY cwd.current_total_spend DESC
+      `, currentWeekEndStr, lastMonthWeekEndStr, currentWeekStartStr, currentWeekEndStr, lastMonthWeekStartStr, lastMonthWeekEndStr);
+      
+    } else {
+      return res.status(400).json({ error: `Invalid period: ${period}` });
+    }
     
-    // Apply raw risk level calculation (no projections for weekly data)
-    let accounts = rawAccounts.map(account => {
-      // Use raw WTD values for risk assessment
+    // Apply risk level calculation and filtering
+    let processedAccounts = accounts.map(account => {
+      // Use current week values for risk assessment (from current_* columns when available, else main columns)
+      const currentSpend = account.current_total_spend !== undefined ? account.current_total_spend : account.total_spend;
+      const currentTexts = account.current_total_texts_delivered !== undefined ? account.current_total_texts_delivered : account.total_texts_delivered;
+      const currentCoupons = account.current_coupons_redeemed !== undefined ? account.current_coupons_redeemed : account.coupons_redeemed;
+      const currentSubs = account.current_active_subs_cnt !== undefined ? account.current_active_subs_cnt : account.active_subs_cnt;
+      
       let risk_level_calc = 'low';
       
       if (account.status === 'FROZEN') {
         risk_level_calc = 'high';
-      } else if (account.active_subs_cnt < 300 && account.coupons_redeemed < 8) { // ~8 coupons per week vs 35/month
+      } else if (currentSubs < 300 && currentCoupons < 8) {
         risk_level_calc = 'high';
-      } else if (account.coupons_redeemed <= 1) {
+      } else if (currentCoupons <= 1) {
         risk_level_calc = 'medium';
-      } else if (account.active_subs_cnt < 300 || account.coupons_redeemed < 8) {
+      } else if (currentSubs < 300 || currentCoupons < 8) {
         risk_level_calc = 'medium';
       }
       
@@ -277,19 +679,12 @@ app.get("/api/bigquery/accounts", async (req, res) => {
     
     // Apply risk level filter if specified
     if (risk_level && risk_level !== 'all') {
-      accounts = accounts.filter(account => account.risk_level === risk_level);
+      processedAccounts = processedAccounts.filter(account => account.risk_level === risk_level);
     }
     
-    // Sort by risk level priority then by spend
-    accounts.sort((a, b) => {
-      const riskOrder = { 'high': 3, 'medium': 2, 'low': 1 };
-      if (riskOrder[a.risk_level] !== riskOrder[b.risk_level]) {
-        return riskOrder[b.risk_level] - riskOrder[a.risk_level];
-      }
-      return b.total_spend - a.total_spend;
-    });
-
-    res.json(accounts);
+    console.log(`📊 Weekly API returning ${processedAccounts.length} accounts for period: ${period}`);
+    
+    res.json(processedAccounts);
   } catch (error) {
     console.error('Error fetching weekly accounts:', error);
     res.status(500).json({ error: 'Failed to fetch weekly accounts data' });

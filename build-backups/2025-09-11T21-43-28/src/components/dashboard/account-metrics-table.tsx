@@ -1,6 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useQuery } from "@tanstack/react-query";
@@ -44,8 +43,6 @@ export default function AccountMetricsTable() {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('current_week');
   const [selectedCSMs, setSelectedCSMs] = useState<string[]>([]);
   const [selectedRiskLevel, setSelectedRiskLevel] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedAccountName, setSelectedAccountName] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -96,7 +93,7 @@ export default function AccountMetricsTable() {
     setSelectedAccountName('');
   };
 
-  const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentWeekStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels, uniqueStatuses } = useMemo(() => {
+  const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentWeekStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels } = useMemo(() => {
     if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
       return { 
         sortedAccounts: [], 
@@ -104,7 +101,6 @@ export default function AccountMetricsTable() {
         totalPages: 0,
         uniqueCSMs: [],
         uniqueRiskLevels: [],
-        uniqueStatuses: [],
         summaryStats: {
           totalAccounts: 0,
           highRiskCount: 0,
@@ -130,32 +126,17 @@ export default function AccountMetricsTable() {
       };
     }
 
-    // Get unique CSMs, risk levels, and statuses for filter options
+    // Get unique CSMs and risk levels for filter options
     const uniqueCSMs = Array.from(new Set(accounts.map(acc => acc.csm).filter(Boolean))).sort();
     const uniqueRiskLevels = Array.from(new Set(accounts.map(acc => acc.risk_level).filter(Boolean))).sort();
-    const uniqueStatuses = Array.from(new Set(accounts.map(acc => acc.status).filter(Boolean))).sort();
 
-    // Filter accounts based on search, status, CSMs, and risk level
+    // Filter accounts based on selected CSMs and risk level
     let filteredAccounts = accounts;
     
-    // Search filter (search in account names)
-    if (searchQuery.trim()) {
-      filteredAccounts = filteredAccounts.filter(acc => 
-        acc.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
-      );
-    }
-    
-    // Status filter
-    if (selectedStatus !== 'all') {
-      filteredAccounts = filteredAccounts.filter(acc => acc.status === selectedStatus);
-    }
-    
-    // CSM filter
     if (selectedCSMs.length > 0) {
       filteredAccounts = filteredAccounts.filter(acc => selectedCSMs.includes(acc.csm));
     }
     
-    // Risk level filter
     if (selectedRiskLevel !== 'all') {
       filteredAccounts = filteredAccounts.filter(acc => acc.risk_level === selectedRiskLevel);
     }
@@ -227,26 +208,12 @@ export default function AccountMetricsTable() {
 
     // Sort filtered accounts
     const sortedAccounts = [...filteredAccounts].sort((a, b) => {
-      let aValue: any, bValue: any;
-      
-      // Handle delta fields - they're already properly named in the data
-      if (sortField === 'spend_delta' || sortField === 'texts_delta' || 
-          sortField === 'coupons_delta' || sortField === 'subs_delta') {
-        aValue = a[sortField];
-        bValue = b[sortField];
-      } else {
-        aValue = a[sortField];
-        bValue = b[sortField];
-      }
+      let aValue = a[sortField];
+      let bValue = b[sortField];
 
-      // Handle null/undefined values - for delta fields, treat as 0
-      if (sortField.endsWith('_delta')) {
-        aValue = aValue ?? 0;
-        bValue = bValue ?? 0;
-      } else {
-        if (aValue == null) aValue = '';
-        if (bValue == null) bValue = '';
-      }
+      // Handle null/undefined values
+      if (aValue == null) aValue = '';
+      if (bValue == null) bValue = '';
 
       // Special handling for risk_level sorting by priority
       if (sortField === 'risk_level') {
@@ -259,7 +226,7 @@ export default function AccountMetricsTable() {
         return sortDirection === 'asc' ? aPriority - bPriority : bPriority - aPriority;
       }
 
-      // Handle numeric fields (including delta fields)
+      // Handle numeric fields
       if (typeof aValue === 'number' && typeof bValue === 'number') {
         return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
       }
@@ -281,8 +248,8 @@ export default function AccountMetricsTable() {
     const paginatedAccounts = sortedAccounts.slice(startIndex, endIndex);
     const totalPages = Math.ceil(sortedAccounts.length / accountsPerPage);
 
-    return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentWeekStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels, uniqueStatuses };
-  }, [accounts, currentPage, accountsPerPage, sortField, sortDirection, timePeriod, selectedCSMs, selectedRiskLevel, searchQuery, selectedStatus]);
+    return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentWeekStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels };
+  }, [accounts, currentPage, accountsPerPage, sortField, sortDirection, timePeriod, selectedCSMs, selectedRiskLevel]);
 
   if (isLoading) {
     return (
@@ -332,7 +299,7 @@ export default function AccountMetricsTable() {
     }
     
     const formattedValue = type === 'currency' 
-      ? formatCurrencyWhole(Math.abs(value))
+      ? formatCurrency(Math.abs(value))
       : formatNumber(Math.abs(value));
     
     const sign = value > 0 ? '+' : value < 0 ? '-' : '';
@@ -434,34 +401,8 @@ export default function AccountMetricsTable() {
               </div>
             </div>
             
-            {/* Filters Bar */}
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Search:</label>
-                <Input
-                  type="text"
-                  placeholder="Search account names..."
-                  value={searchQuery}
-                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                  className="w-48"
-                />
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Status:</label>
-                <Select value={selectedStatus} onValueChange={(value) => { setSelectedStatus(value); setCurrentPage(1); }}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    {uniqueStatuses.map((status) => (
-                      <SelectItem key={status} value={status}>{status}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
+            {/* Filters */}
+            <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium text-gray-700">CSM:</label>
                 <MultiSelect
@@ -471,6 +412,8 @@ export default function AccountMetricsTable() {
                   placeholder="All CSMs"
                 />
               </div>
+              
+
               
               <div className="text-sm text-gray-600 ml-auto">
                 {accounts && (
@@ -631,7 +574,7 @@ export default function AccountMetricsTable() {
                         </Badge>
                       </td>
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatCurrencyWhole(timePeriod === 'current_week' ? account.total_spend : (account.current_total_spend || 0))}
+                        {formatCurrency(timePeriod === 'current_week' ? account.total_spend : (account.current_total_spend || 0))}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">
