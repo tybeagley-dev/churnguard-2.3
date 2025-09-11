@@ -216,9 +216,11 @@ export class DailyProductionETL {
           ? as month_status,
           datetime('now') as last_updated
         FROM daily_metrics dm
+        INNER JOIN accounts a ON dm.account_id = a.account_id
         WHERE dm.date LIKE ? || '%'
+          AND ? >= strftime('%Y-%m', a.launched_at)
         GROUP BY dm.account_id
-      `, [month, monthLabel, monthStatus, month]);
+      `, [month, monthLabel, monthStatus, month, month]);
 
       const monthsUpdated = result.changes || 0;
       

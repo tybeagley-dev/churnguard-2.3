@@ -46,11 +46,30 @@ class CurrentMonthUpdater {
         COUNT(DISTINCT dm.date) as days_with_activity,
         datetime('now') as last_updated,
         CASE 
-          WHEN a.status = 'FROZEN' THEN 'high'
-          WHEN (ROUND(AVG(dm.active_subs_cnt)) < 300 AND SUM(dm.coupons_redeemed) < 35) THEN 'high'
-          WHEN (SUM(dm.coupons_redeemed) <= 3) THEN 'medium'
-          WHEN (ROUND(AVG(dm.active_subs_cnt)) < 300 OR SUM(dm.coupons_redeemed) < 35) THEN 'medium'
-          ELSE 'low'
+          WHEN a.status = 'ARCHIVED' THEN 'high'
+          WHEN a.status = 'FROZEN' AND SUM(dm.total_texts_delivered) = 0 THEN 'high'
+          WHEN a.status = 'FROZEN' THEN 'medium'
+          ELSE 
+            -- Calculate flag count using proportional projections
+            CASE
+              WHEN (
+                -- Flag 1: Monthly Redemptions (< 10) - 1 point
+                (CASE WHEN (SUM(dm.coupons_redeemed) / (CAST(strftime('%d', 'now') AS REAL) / CAST(strftime('%d', date(strftime('%Y-%m', 'now') || '-01', '+1 month', '-1 day')) AS REAL))) < 10 THEN 1 ELSE 0 END) +
+                
+                -- Flag 2: Low Activity (< 300 subscribers) - 1 point  
+                (CASE WHEN ROUND(AVG(dm.active_subs_cnt)) < 300 THEN 1 ELSE 0 END) +
+                
+                -- Flag 3: Low Engagement Combo (< 300 subs AND < 35 redemptions) - 2 points
+                (CASE WHEN (ROUND(AVG(dm.active_subs_cnt)) < 300 AND (SUM(dm.coupons_redeemed) / (CAST(strftime('%d', 'now') AS REAL) / CAST(strftime('%d', date(strftime('%Y-%m', 'now') || '-01', '+1 month', '-1 day')) AS REAL))) < 35) THEN 2 ELSE 0 END)
+              ) >= 3 THEN 'high'
+              WHEN (
+                -- Same flag calculation
+                (CASE WHEN (SUM(dm.coupons_redeemed) / (CAST(strftime('%d', 'now') AS REAL) / CAST(strftime('%d', date(strftime('%Y-%m', 'now') || '-01', '+1 month', '-1 day')) AS REAL))) < 10 THEN 1 ELSE 0 END) +
+                (CASE WHEN ROUND(AVG(dm.active_subs_cnt)) < 300 THEN 1 ELSE 0 END) +
+                (CASE WHEN (ROUND(AVG(dm.active_subs_cnt)) < 300 AND (SUM(dm.coupons_redeemed) / (CAST(strftime('%d', 'now') AS REAL) / CAST(strftime('%d', date(strftime('%Y-%m', 'now') || '-01', '+1 month', '-1 day')) AS REAL))) < 35) THEN 2 ELSE 0 END)
+              ) >= 1 THEN 'medium'
+              ELSE 'low'
+            END
         END as historical_risk_level,
         'current' as month_status
       FROM accounts a

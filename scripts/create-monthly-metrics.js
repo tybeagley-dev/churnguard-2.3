@@ -95,8 +95,10 @@ class MonthlyMetricsBuilder {
         COUNT(*) as days_with_activity,
         datetime('now') as last_updated
         
-      FROM daily_metrics
-      GROUP BY account_id, substr(date, 1, 7)
+      FROM daily_metrics dm
+      INNER JOIN accounts a ON dm.account_id = a.account_id
+      WHERE substr(dm.date, 1, 7) >= strftime('%Y-%m', a.launched_at)
+      GROUP BY dm.account_id, substr(dm.date, 1, 7)
       ORDER BY account_id, month
     `;
 
