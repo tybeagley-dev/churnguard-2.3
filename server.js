@@ -480,6 +480,12 @@ app.get("/api/historical-performance", async (_req, res) => {
       ORDER BY mm.month ASC
     `);
 
+    // Debug: Log August 2025 count
+    const augustData = historical.find(row => row.period === '2025-08');
+    if (augustData) {
+      console.log(`📊 Historical Performance - August 2025: ${augustData.total_accounts} accounts`);
+    }
+
     // Format to match 2.1 structure
     const formatted = historical.map(row => ({
       period: row.period,
@@ -501,11 +507,16 @@ app.get("/api/historical-performance", async (_req, res) => {
 
 app.get("/api/monthly-trends", async (_req, res) => {
   try {
-    // Use pre-calculated historical_risk_level for accurate risk distribution
+    console.log('📊 Fetching Monthly Trends data...');
+    
+    // Get current month for visual distinction
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
+    
+    // Get 13 months: 12 prior months + current month
     const trends = await db.all(`
       SELECT 
         mm.month,
-        COUNT(*) as total_accounts,
+        COUNT(DISTINCT mm.account_id) as total_accounts,
         
         -- Use pre-calculated historical risk levels
         SUM(CASE WHEN mm.historical_risk_level = 'high' THEN 1 ELSE 0 END) as high_risk,
@@ -520,13 +531,38 @@ app.get("/api/monthly-trends", async (_req, res) => {
         (a.status = 'ARCHIVED' AND 
          mm.month < date(COALESCE(a.archived_at, a.earliest_unit_archived_at)))
       )
-      AND mm.month >= strftime('%Y-%m', 'now', '-11 months')
+      AND mm.month >= strftime('%Y-%m', 'now', '-12 months')
       AND mm.month <= strftime('%Y-%m', 'now')
       GROUP BY mm.month
       ORDER BY mm.month ASC
     `);
 
-    res.json(trends);
+    // Helper function to create abbreviated month labels
+    const createAbbreviatedLabel = (monthStr) => {
+      const [year, month] = monthStr.split('-');
+      const monthIndex = parseInt(month, 10) - 1;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${months[monthIndex]} ${year}`;
+    };
+
+    // Transform data to include labels and current month indicator
+    const transformedTrends = trends.map(row => ({
+      ...row,
+      month_label: createAbbreviatedLabel(row.month),
+      is_current_month: row.month === currentMonth
+    }));
+
+    console.log(`✅ Monthly Trends data: ${transformedTrends.length} months`);
+    console.log(`🔍 Current month: ${currentMonth}`);
+    
+    // Debug: Log August 2025 count
+    const augustData = transformedTrends.find(row => row.month === '2025-08');
+    if (augustData) {
+      console.log(`📊 Monthly Trends - August 2025: ${augustData.total_accounts} accounts`);
+    }
+    
+    res.json(transformedTrends);
   } catch (error) {
     console.error('Error fetching monthly trends:', error);
     res.status(500).json({ error: 'Failed to fetch monthly trends data' });
@@ -792,11 +828,11 @@ app.get("/health", (_req, res) => {
 });
 
 // Serve static files AFTER API routes
-app.use(express.static('public'));
+app.use(express.static('dist'));
 
 // Catch-all handler: send back React's index.html file for client-side routing
 app.get("*", (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
 // Daily ETL Scheduler Setup
