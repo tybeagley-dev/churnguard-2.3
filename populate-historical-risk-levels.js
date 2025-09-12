@@ -114,11 +114,15 @@ class HistoricalRiskPopulator {
   }
 
   async populateHistoricalRiskLevels() {
-    console.log('🎯 Populating historical risk levels with correct flag logic...');
+    console.log('🎯 Populating historical risk levels with correct flag logic and eligibility criteria...');
     const db = await this.getDatabase();
 
     try {
-      // Get all monthly metrics with account data, ordered by account and month
+      // Get all monthly metrics with account data, applying eligibility criteria
+      // Only include:
+      // 1. LAUNCHED accounts (active)
+      // 2. FROZEN accounts (inactive but tracked)  
+      // 3. ARCHIVED accounts only if archived during the specific month
       const monthlyData = await db.all(`
         SELECT 
           mm.*,
@@ -128,10 +132,16 @@ class HistoricalRiskPopulator {
           a.launched_at
         FROM monthly_metrics mm
         INNER JOIN accounts a ON mm.account_id = a.account_id
+        WHERE (
+          a.status IN ('LAUNCHED', 'FROZEN') OR 
+          (a.status = 'ARCHIVED' AND 
+           (COALESCE(a.archived_at, a.earliest_unit_archived_at) LIKE mm.month || '%'))
+        )
+        AND mm.month >= strftime('%Y-%m', a.launched_at)
         ORDER BY mm.account_id, mm.month
       `);
 
-      console.log(`📊 Processing ${monthlyData.length} monthly records...`);
+      console.log(`📊 Processing ${monthlyData.length} eligible monthly records...`);
 
       let updateCount = 0;
       let accountData = {};

@@ -3,6 +3,7 @@ import { DailyTextsETLSQLite } from './daily-texts-etl-sqlite.js';
 import { DailyCouponsETLSQLite } from './daily-coupons-etl-sqlite.js';
 import { DailySubsETLSQLite } from './daily-subs-etl-sqlite.js';
 import { AccountsETLSQLite } from './accounts-etl-sqlite.js';
+import { HistoricalRiskPopulator } from '../populate-historical-risk-levels.js';
 import { BigQuery } from '@google-cloud/bigquery';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
@@ -22,6 +23,14 @@ export class DailyProductionETL {
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
       keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
     });
+    
+    // Complete 8-flag risk calculation thresholds
+    this.MONTHLY_REDEMPTIONS_THRESHOLD = 10;
+    this.LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD = 300;
+    this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD = 35;
+    this.LOW_ACTIVITY_SUBS_THRESHOLD = 300;
+    this.SPEND_DROP_THRESHOLD = 0.40; // 40%
+    this.REDEMPTIONS_DROP_THRESHOLD = 0.50; // 50%
   }
 
   async getDatabase() {
@@ -60,24 +69,27 @@ export class DailyProductionETL {
     console.log(`📅 Processing date: ${processDate}`);
     
     try {
-      // Step 0: Update accounts table from BigQuery
-      console.log('\n👥 Step 0: Update accounts table from BigQuery');
+      // Step 0: Check for month-end and complete previous month's historical risk levels
+      const monthEndResults = await this.checkAndCompleteMonthEnd(processDate);
+      
+      // Step 1: Update accounts table from BigQuery
+      console.log('\n👥 Step 1: Update accounts table from BigQuery');
       const accountsResults = await this.updateAccountsTable();
       
-      // Step 1: Extract from BigQuery and Load to daily_metrics
-      console.log('\n📊 Step 1: BigQuery Extract & Load to daily_metrics');
+      // Step 2: Extract from BigQuery and Load to daily_metrics
+      console.log('\n📊 Step 2: BigQuery Extract & Load to daily_metrics');
       const extractResults = await this.extractAndLoadDailyMetrics(processDate);
       
-      // Step 2: Aggregate to monthly_metrics (full MTD recalculation)
-      console.log('\n📈 Step 2: Aggregate to monthly_metrics');
+      // Step 3: Aggregate to monthly_metrics (full MTD recalculation)
+      console.log('\n📈 Step 3: Aggregate to monthly_metrics');
       const monthlyResults = await this.aggregateToMonthlyMetrics(processDate);
       
-      // Step 3: Update trending risk levels
-      console.log('\n🎯 Step 3: Update trending risk levels');
+      // Step 4: Update trending risk levels (proportional analysis)
+      console.log('\n🎯 Step 4: Update trending risk levels');
       const riskResults = await this.updateTrendingRiskLevels(processDate);
       
-      // Step 4: Update account summary metrics
-      console.log('\n🔄 Step 4: Update account summary metrics');
+      // Step 5: Update account summary metrics
+      console.log('\n🔄 Step 5: Update account summary metrics');
       await this.updateAccountSummaryMetrics();
       
       const endTime = Date.now();
@@ -85,15 +97,19 @@ export class DailyProductionETL {
       
       console.log(`\n✅ Production Daily ETL Pipeline completed successfully!`);
       console.log(`⏱️  Total duration: ${duration} seconds`);
+      if (monthEndResults.historicalCalculationRan) {
+        console.log(`📅 Month-end: Completed historical risk levels for ${monthEndResults.completedMonth}`);
+      }
       console.log(`👥 Accounts refreshed: ${accountsResults.accountsUpdated}`);
       console.log(`📊 Processed ${extractResults.totalAccounts} accounts`);
       console.log(`📈 Updated ${monthlyResults.monthsUpdated} monthly records`);
-      console.log(`🎯 Recalculated ${riskResults.accountsUpdated} risk levels`);
+      console.log(`🎯 Recalculated ${riskResults.accountsUpdated} trending risk levels`);
       
       return {
         success: true,
         processDate,
         duration: parseFloat(duration),
+        monthEndResults,
         accountsResults,
         extractResults,
         monthlyResults,
@@ -103,6 +119,70 @@ export class DailyProductionETL {
     } catch (error) {
       console.error(`❌ Production Daily ETL Pipeline failed:`, error);
       throw error;
+    }
+  }
+
+  async checkAndCompleteMonthEnd(processDate) {
+    const currentMonth = processDate.substring(0, 7); // YYYY-MM
+    const dayOfMonth = parseInt(processDate.substring(8, 10));
+    
+    // Check if this is the first few days of a new month (days 1-3)
+    // This handles timezone variations and ensures we don't miss month-end
+    const isEarlyMonth = dayOfMonth <= 3;
+    
+    if (!isEarlyMonth) {
+      console.log(`📅 Month-end check: Day ${dayOfMonth} of ${currentMonth} - no month-end processing needed`);
+      return { historicalCalculationRan: false };
+    }
+    
+    const previousMonth = this.getPreviousMonth(currentMonth);
+    
+    console.log(`📅 Month-end check: Processing ${processDate} (day ${dayOfMonth})`);
+    console.log(`📅 Checking if ${previousMonth} needs historical risk level completion...`);
+    
+    const db = await this.getDatabase();
+    
+    try {
+      // Check if previous month already has historical risk levels calculated
+      const existingHistorical = await db.get(`
+        SELECT COUNT(*) as count 
+        FROM monthly_metrics 
+        WHERE month = ? AND historical_risk_level IS NOT NULL
+      `, [previousMonth]);
+      
+      if (existingHistorical.count > 0) {
+        console.log(`✅ Historical risk levels already calculated for ${previousMonth}`);
+        await db.close();
+        return { historicalCalculationRan: false };
+      }
+      
+      // Mark the previous month as complete
+      await db.run(`
+        UPDATE monthly_metrics 
+        SET month_status = 'complete'
+        WHERE month = ?
+      `, [previousMonth]);
+      
+      console.log(`📅 Marked ${previousMonth} as complete, running historical risk calculation...`);
+      
+      // Run historical risk level calculation for the completed month
+      const historicalPopulator = new HistoricalRiskPopulator();
+      await historicalPopulator.populateHistoricalRiskLevels();
+      
+      console.log(`✅ Historical risk levels calculated for completed month: ${previousMonth}`);
+      
+      await db.close();
+      
+      return { 
+        historicalCalculationRan: true,
+        completedMonth: previousMonth
+      };
+      
+    } catch (error) {
+      await db.close();
+      console.error(`❌ Month-end processing failed:`, error);
+      // Don't throw - this shouldn't stop the daily ETL
+      return { historicalCalculationRan: false, error: error.message };
     }
   }
 
@@ -277,11 +357,8 @@ export class DailyProductionETL {
       let accountsUpdated = 0;
       
       for (const account of accounts) {
-        // Pro-rate metrics based on days elapsed in month
-        const proRatedMetrics = this.proRateMetrics(account, dayOfMonth);
-        
-        // Calculate risk level using existing logic
-        const riskLevel = this.calculateTrendingRiskLevel(proRatedMetrics, account);
+        // Calculate trending risk level using proportional analysis
+        const riskLevel = this.calculateTrendingRiskLevel(account, dayOfMonth);
         
         // Update historical_risk_level in monthly_metrics table
         await db.run(`
@@ -318,55 +395,61 @@ export class DailyProductionETL {
     }
   }
 
-  proRateMetrics(monthlyData, dayOfMonth) {
-    const daysInMonth = this.getDaysInMonth(monthlyData.month);
-    const proRationFactor = daysInMonth / dayOfMonth;
-    
-    return {
-      account_id: monthlyData.account_id,
-      total_spend: monthlyData.total_spend * proRationFactor,
-      total_texts_delivered: monthlyData.total_texts_delivered * proRationFactor,
-      total_coupons_redeemed: monthlyData.total_coupons_redeemed * proRationFactor,
-      avg_active_subs_cnt: monthlyData.avg_active_subs_cnt,
-      days_with_activity: monthlyData.days_with_activity,
-      month: monthlyData.month
-    };
-  }
 
   getDaysInMonth(monthString) {
     const [year, month] = monthString.split('-').map(Number);
     return new Date(year, month, 0).getDate();
   }
 
-  calculateTrendingRiskLevel(proRatedMetrics, accountData) {
-    // Use the existing risk calculation logic but with pro-rated metrics
-    const monthData = {
-      total_spend: proRatedMetrics.total_spend,
-      total_texts_delivered: proRatedMetrics.total_texts_delivered,
-      total_coupons_redeemed: proRatedMetrics.total_coupons_redeemed,
-      avg_active_subs_cnt: proRatedMetrics.avg_active_subs_cnt
-    };
+  getPreviousMonth(monthString) {
+    const [year, month] = monthString.split('-').map(Number);
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    return `${prevYear}-${prevMonth.toString().padStart(2, '0')}`;
+  }
+
+  calculateMonthsSinceStart(launchedAt, currentMonth) {
+    if (!launchedAt) return 0;
     
-    // Simplified risk calculation (matches existing logic in populate-historical-risk-levels.js)
-    const MONTHLY_REDEMPTIONS_THRESHOLD = 10;
-    const LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD = 300;
-    const LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD = 35;
+    const launchDate = new Date(launchedAt);
+    const currentDate = new Date(currentMonth + '-01');
     
-    const redemptions = monthData.total_coupons_redeemed || 0;
-    const subs = monthData.avg_active_subs_cnt || 0;
-    const spend = monthData.total_spend || 0;
+    const monthsDiff = (currentDate.getFullYear() - launchDate.getFullYear()) * 12 + 
+                      (currentDate.getMonth() - launchDate.getMonth());
     
-    // High risk conditions
-    if (redemptions < MONTHLY_REDEMPTIONS_THRESHOLD) return 'high';
-    if (subs > LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD && redemptions < LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD) return 'high';
-    if (spend < 20) return 'high';
-    if (accountData.status === 'FROZEN') return 'high';
+    return Math.max(0, monthsDiff);
+  }
+
+  calculateTrendingRiskLevel(monthlyData, dayOfMonth) {
+    // Proportional Trending Analysis Logic
+    const daysInMonth = this.getDaysInMonth(monthlyData.month);
+    const progressPercentage = (dayOfMonth - 1) / daysInMonth;
     
-    // Medium risk conditions  
-    if (redemptions < 25 || spend < 50) return 'medium';
+    // Avoid division by zero for first day of month
+    if (progressPercentage <= 0) {
+      return 'low'; // Not enough data to trend
+    }
     
-    // Default to low risk
-    return 'low';
+    // Calculate projected month-end metrics
+    const projectedRedemptions = monthlyData.total_coupons_redeemed / progressPercentage;
+    const projectedSpend = monthlyData.total_spend / progressPercentage;
+    
+    // Apply trending thresholds to projected values
+    // These are the same thresholds used in historical calculations but applied to projections
+    if (projectedRedemptions < this.MONTHLY_REDEMPTIONS_THRESHOLD) {
+      return 'high'; // Trending toward low redemptions
+    }
+    
+    if (monthlyData.avg_active_subs_cnt < this.LOW_ACTIVITY_SUBS_THRESHOLD && 
+        projectedRedemptions < this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD) {
+      return 'high'; // Low engagement combo trending
+    }
+    
+    if (projectedRedemptions < 25 || projectedSpend < 50) {
+      return 'medium'; // Moderate risk trending
+    }
+    
+    return 'low'; // Trending well
   }
 
   async updateAccountSummaryMetrics() {
