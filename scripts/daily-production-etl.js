@@ -352,13 +352,51 @@ export class DailyProductionETL {
         )
       `, [currentMonth, currentMonth]);
 
+      // Get previous month for drop calculations
+      const previousMonth = this.getPreviousMonth(currentMonth);
+      
       console.log(`📊 Processing ${accounts.length} accounts for risk assessment...`);
       
       let accountsUpdated = 0;
       
       for (const account of accounts) {
-        // Calculate trending risk level using proportional analysis
-        const riskLevel = this.calculateTrendingRiskLevel(account, dayOfMonth);
+        // Get same-day totals from previous month for proper drop calculations
+        let previousMonthSameDayData = null;
+        try {
+          const previousMonthSameDay = `${previousMonth}-${dayOfMonth.toString().padStart(2, '0')}`;
+          
+          // Sum daily metrics up to same day of previous month
+          const prevMonthTotals = await db.get(`
+            SELECT 
+              SUM(total_spend) as total_spend,
+              SUM(coupons_redeemed) as total_coupons_redeemed,
+              AVG(active_subs_cnt) as avg_active_subs_cnt,
+              SUM(total_texts_delivered) as total_texts_delivered
+            FROM daily_metrics
+            WHERE account_id = ? 
+              AND date >= ? 
+              AND date <= ?
+          `, [
+            account.account_id, 
+            `${previousMonth}-01`,
+            previousMonthSameDay
+          ]);
+          
+          if (prevMonthTotals && prevMonthTotals.total_spend !== null) {
+            previousMonthSameDayData = {
+              total_spend: prevMonthTotals.total_spend || 0,
+              total_coupons_redeemed: prevMonthTotals.total_coupons_redeemed || 0,
+              avg_active_subs_cnt: prevMonthTotals.avg_active_subs_cnt || 0,
+              total_texts_delivered: prevMonthTotals.total_texts_delivered || 0
+            };
+          }
+        } catch (error) {
+          // Previous month same-day data not available - this is normal for new accounts
+          previousMonthSameDayData = null;
+        }
+        
+        // Calculate trending risk level using the full 8-flag system with proper comparisons
+        const riskLevel = this.calculateTrendingRiskLevel(account, dayOfMonth, account, previousMonthSameDayData);
         
         // Update historical_risk_level in monthly_metrics table
         await db.run(`
@@ -420,8 +458,35 @@ export class DailyProductionETL {
     return Math.max(0, monthsDiff);
   }
 
-  calculateTrendingRiskLevel(monthlyData, dayOfMonth) {
-    // Proportional Trending Analysis Logic
+  calculateTrendingRiskLevel(monthlyData, dayOfMonth, accountData, previousMonthData = null) {
+    // Use the same 8-flag system as historical calculations but with projected values
+    
+    // Check if account was archived during this specific month (regardless of current status)
+    const monthStart = new Date(monthlyData.month + '-01');
+    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+    
+    const archivedDate = accountData.archived_at 
+      ? new Date(accountData.archived_at)
+      : accountData.earliest_unit_archived_at 
+        ? new Date(accountData.earliest_unit_archived_at)
+        : null;
+    
+    // Flag 1: If archived during this specific month = high risk
+    if (archivedDate && archivedDate >= monthStart && archivedDate <= monthEnd) {
+      return 'high';
+    }
+    
+    // Flags 2-3: FROZEN accounts logic
+    if (accountData.status === 'FROZEN') {
+      const hasCurrentMonthTexts = monthlyData.total_texts_delivered > 0;
+      
+      // Check if it's been 1+ month since last text (Frozen & Inactive)
+      const isFrozenAndInactive = !hasCurrentMonthTexts;
+      
+      return isFrozenAndInactive ? 'high' : 'medium';
+    }
+    
+    // Flags 4-8: LAUNCHED/ACTIVE accounts: Flag-based system with projected values
     const daysInMonth = this.getDaysInMonth(monthlyData.month);
     const progressPercentage = (dayOfMonth - 1) / daysInMonth;
     
@@ -434,22 +499,53 @@ export class DailyProductionETL {
     const projectedRedemptions = monthlyData.total_coupons_redeemed / progressPercentage;
     const projectedSpend = monthlyData.total_spend / progressPercentage;
     
-    // Apply trending thresholds to projected values
-    // These are the same thresholds used in historical calculations but applied to projections
+    let flagCount = 0;
+    const monthsSinceStart = this.calculateMonthsSinceStart(accountData.launched_at, monthlyData.month);
+    
+    // Flag 4: Monthly Redemptions (< 10 redemptions) - 1 point
     if (projectedRedemptions < this.MONTHLY_REDEMPTIONS_THRESHOLD) {
-      return 'high'; // Trending toward low redemptions
+      flagCount++;
     }
     
-    if (monthlyData.avg_active_subs_cnt < this.LOW_ACTIVITY_SUBS_THRESHOLD && 
-        projectedRedemptions < this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD) {
-      return 'high'; // Low engagement combo trending
+    // Flag 5: Low Engagement Combo (< 300 subs AND < 35 redemptions) - 2 points
+    // Only available for accounts after their first two months
+    if (monthsSinceStart > 2) {
+      if (monthlyData.avg_active_subs_cnt < this.LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD && 
+          projectedRedemptions < this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD) {
+        flagCount += 2;
+      }
     }
     
-    if (projectedRedemptions < 25 || projectedSpend < 50) {
-      return 'medium'; // Moderate risk trending
+    // Flag 6: Low Activity (< 300 subscribers) - 1 point
+    if (monthlyData.avg_active_subs_cnt < this.LOW_ACTIVITY_SUBS_THRESHOLD) {
+      flagCount++;
     }
     
-    return 'low'; // Trending well
+    // Flags 7 & 8: Drop flags using same-day comparisons (apples-to-apples)
+    if (previousMonthData && monthsSinceStart >= 3) {
+      // Flag 7: Spend Drop (≥ 40% decrease from same day of previous month) - 1 point
+      if (previousMonthData.total_spend > 0) {
+        const currentSpend = monthlyData.total_spend; // Actual current month-to-date spend
+        const spendDrop = Math.max(0, (previousMonthData.total_spend - currentSpend) / previousMonthData.total_spend);
+        if (spendDrop >= this.SPEND_DROP_THRESHOLD) {
+          flagCount++;
+        }
+      }
+      
+      // Flag 8: Redemptions Drop (≥ 50% decrease from same day of previous month) - 1 point
+      if (previousMonthData.total_coupons_redeemed > 0) {
+        const currentRedemptions = monthlyData.total_coupons_redeemed; // Actual current month-to-date redemptions
+        const redemptionsDrop = Math.max(0, (previousMonthData.total_coupons_redeemed - currentRedemptions) / previousMonthData.total_coupons_redeemed);
+        if (redemptionsDrop >= this.REDEMPTIONS_DROP_THRESHOLD) {
+          flagCount++;
+        }
+      }
+    }
+    
+    // Determine risk level based on flag count (same as historical)
+    if (flagCount >= 3) return 'high';
+    if (flagCount >= 1) return 'medium';
+    return 'low';
   }
 
   async updateAccountSummaryMetrics() {
