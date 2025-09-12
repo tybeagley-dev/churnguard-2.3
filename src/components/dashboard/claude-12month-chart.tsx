@@ -53,8 +53,15 @@ export function Claude12MonthChart() {
 
   const { data: claude12MonthData, isLoading, error } = useQuery<Claude12MonthData[]>({
     queryKey: ['/api/bigquery/claude-12month'],
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    gcTime: 20 * 60 * 1000, // 20 minutes
+    queryFn: async () => {
+      const response = await fetch(`/api/bigquery/claude-12month`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch claude 12-month data');
+      }
+      return response.json();
+    },
+    staleTime: 0, // Force fresh data
+    gcTime: 0, // No cache
     retry: 1,
     retryDelay: 5000,
     refetchOnWindowFocus: false,

@@ -1137,6 +1137,12 @@ app.get("/api/bigquery/account-history/:accountId", async (req, res) => {
 
 app.get("/api/historical-performance", async (_req, res) => {
   try {
+    // Force no cache
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate', 
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
     // Include archived accounts through the month they were archived, exclude only after
     // Exclude current month from historical view
     const historical = await db.all(`
@@ -1151,10 +1157,13 @@ app.get("/api/historical-performance", async (_req, res) => {
       FROM monthly_metrics mm
       INNER JOIN accounts a ON mm.account_id = a.account_id
       WHERE (
-        -- Use same eligibility logic as ETL pipeline
-        a.status IN ('LAUNCHED', 'FROZEN') OR 
-        (a.status = 'ARCHIVED' AND 
-         mm.month < date(COALESCE(a.archived_at, a.earliest_unit_archived_at)))
+        -- Correct eligibility: launched by month-end, not archived before month start
+        a.launched_at IS NOT NULL
+        AND a.launched_at < datetime(date(mm.month || '-01'), '+1 month')
+        AND (
+          COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
+          OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= date(mm.month || '-01')
+        )
       )
       AND mm.month >= strftime('%Y-%m', 'now', '-12 months')
       AND mm.month < strftime('%Y-%m', 'now')
@@ -1189,6 +1198,12 @@ app.get("/api/historical-performance", async (_req, res) => {
 
 app.get("/api/monthly-trends", async (_req, res) => {
   try {
+    // Force no cache
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
     console.log('📊 Fetching Monthly Trends data...');
     
     // Get current month for visual distinction
@@ -1208,10 +1223,13 @@ app.get("/api/monthly-trends", async (_req, res) => {
       FROM monthly_metrics mm
       INNER JOIN accounts a ON mm.account_id = a.account_id
       WHERE (
-        -- Use same eligibility logic as ETL pipeline (same as Historical Performance)
-        a.status IN ('LAUNCHED', 'FROZEN') OR 
-        (a.status = 'ARCHIVED' AND 
-         mm.month < date(COALESCE(a.archived_at, a.earliest_unit_archived_at)))
+        -- Correct eligibility: launched by month-end, not archived before month start
+        a.launched_at IS NOT NULL
+        AND a.launched_at < datetime(date(mm.month || '-01'), '+1 month')
+        AND (
+          COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
+          OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= date(mm.month || '-01')
+        )
       )
       AND mm.month >= strftime('%Y-%m', 'now', '-12 months')
       AND mm.month <= strftime('%Y-%m', 'now')
@@ -1261,6 +1279,12 @@ app.get("/api/bigquery/monthly-trends", async (req, res) => {
 // Claude 12-month historical performance data from SQLite
 app.get("/api/bigquery/claude-12month", async (_req, res) => {
   try {
+    // Force no cache
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
     console.log('📊 Fetching claude 12-month historical performance data...');
     
     // Get historical data for 12 completed months, excluding current month
@@ -1276,12 +1300,16 @@ app.get("/api/bigquery/claude-12month", async (_req, res) => {
         SUM(mm.total_texts_delivered) as total_texts_sent
       FROM monthly_metrics mm
       INNER JOIN accounts a ON mm.account_id = a.account_id
-      WHERE mm.month >= date('now', '-13 months', 'start of month')
-      AND mm.month < date('now', '-1 month', 'start of month')
+      WHERE mm.month >= strftime('%Y-%m', 'now', '-12 months')
+      AND mm.month < strftime('%Y-%m', 'now')
       AND (
-        a.status IN ('LAUNCHED', 'FROZEN') OR 
-        (a.status = 'ARCHIVED' AND 
-         mm.month < date(COALESCE(a.archived_at, a.earliest_unit_archived_at)))
+        -- Correct eligibility: launched by month-end, not archived before month start
+        a.launched_at IS NOT NULL
+        AND a.launched_at < datetime(date(mm.month || '-01'), '+1 month')
+        AND (
+          COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
+          OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= date(mm.month || '-01')
+        )
       )
       GROUP BY mm.month, mm.month_label
       ORDER BY mm.month ASC
@@ -1298,6 +1326,9 @@ app.get("/api/bigquery/claude-12month", async (_req, res) => {
       return `${months[monthIndex]} ${year}`;
     };
 
+    // Debug: Log raw data to see what we're getting
+    console.log('📊 Claude 12-month raw data sample:', historicalData.slice(-2));
+    
     // Transform data to match Claude12MonthData interface
     const transformedData = historicalData.map((row, index) => {
       const previousRow = index > 0 ? historicalData[index - 1] : null;
@@ -1313,6 +1344,7 @@ app.get("/api/bigquery/claude-12month", async (_req, res) => {
 
 
       const transformed = {
+        month: row.month, // Keep original month field
         month_label: createAbbreviatedLabel(row.month),
         month_yr: row.month,
         total_accounts: row.total_accounts || 0,

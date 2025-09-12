@@ -26,7 +26,7 @@ export default function MonthlyTrendsChart() {
     },
     enabled: true,
     retry: 1,
-    staleTime: 30000
+    staleTime: 0
   });
 
   const colors = {
