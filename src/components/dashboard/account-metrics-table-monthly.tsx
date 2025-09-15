@@ -192,86 +192,6 @@ export default function AccountMetricsTableMonthly() {
     return colors[status] || '';
   };
 
-  // Calculate trending risk level and flags based on current month progress
-  const calculateTrendingRisk = (account: AccountMetric) => {
-    // Only calculate trending risk for current month view
-    if (timePeriod !== 'current_month') {
-      return {
-        trending_risk_level: null,
-        trending_risk_flags: null
-      };
-    }
-
-    const today = new Date();
-    const currentDay = today.getDate();
-    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    
-    // Progress through the month (exclude today since it's incomplete)
-    const progressPercentage = Math.max(0.1, (currentDay - 1) / daysInMonth);
-    
-    // Project end-of-month values
-    const projectedSpend = (account.total_spend || 0) / progressPercentage;
-    const projectedRedemptions = (account.coupons_redeemed || 0) / progressPercentage;
-    
-    // Get previous month data for comparison (use account deltas to calculate previous values)
-    // Since delta = current - previous, we can calculate: previous = current - delta
-    const previousMonthSpend = timePeriod === 'current_month' 
-      ? (account.total_spend || 0) - (account.spend_delta || 0)
-      : (account.total_spend || 0); // For other periods, use current as baseline
-    const previousMonthRedemptions = timePeriod === 'current_month'
-      ? (account.coupons_redeemed || 0) - (account.coupons_delta || 0)
-      : (account.coupons_redeemed || 0); // For other periods, use current as baseline
-    
-    // Calculate projected drops
-    const projectedSpendDrop = previousMonthSpend > 0 
-      ? Math.max(0, (previousMonthSpend - projectedSpend) / previousMonthSpend) 
-      : 0;
-    const projectedRedemptionsDrop = previousMonthRedemptions > 0 
-      ? Math.max(0, (previousMonthRedemptions - projectedRedemptions) / previousMonthRedemptions) 
-      : 0;
-    
-    // Risk calculation thresholds (based on risk-engine.ts)
-    const MONTHLY_REDEMPTIONS_THRESHOLD = 3;
-    const LOW_ACTIVITY_SUBSCRIBERS_THRESHOLD = 300;
-    const LOW_ACTIVITY_REDEMPTIONS_THRESHOLD = 35;
-    const SPEND_DROP_THRESHOLD = 0.40; // 40%
-    const REDEMPTIONS_DROP_THRESHOLD = 0.50; // 50%
-    
-    // Calculate individual flags for projected end-of-month scenario
-    const monthlyRedemptionsFlag = projectedRedemptions <= MONTHLY_REDEMPTIONS_THRESHOLD;
-    const lowActivityFlag = (account.active_subs_cnt || 0) < LOW_ACTIVITY_SUBSCRIBERS_THRESHOLD && 
-                           projectedRedemptions < LOW_ACTIVITY_REDEMPTIONS_THRESHOLD;
-    const spendDropFlag = projectedSpendDrop >= SPEND_DROP_THRESHOLD;
-    const redemptionsDropFlag = projectedRedemptionsDrop >= REDEMPTIONS_DROP_THRESHOLD;
-    
-    // Count flags
-    let flagCount = 0;
-    if (monthlyRedemptionsFlag) flagCount++;
-    if (lowActivityFlag) flagCount++;
-    if (spendDropFlag) flagCount++;
-    if (redemptionsDropFlag) flagCount++;
-    
-    // Determine trending risk level
-    let trending_risk_level: string;
-    if (flagCount === 0) trending_risk_level = 'low';
-    else if (flagCount >= 1 && flagCount <= 2) trending_risk_level = 'medium';
-    else trending_risk_level = 'high'; // 3-4 flags
-    
-    return {
-      trending_risk_level,
-      trending_risk_flags: {
-        monthlyRedemptionsFlag,
-        lowActivityFlag,
-        spendDropFlag,
-        redemptionsDropFlag,
-      }
-    };
-  };
-
-  // Legacy function for backward compatibility
-  const calculateTrendingRiskLevel = (account: AccountMetric) => {
-    return calculateTrendingRisk(account).trending_risk_level;
-  };
 
   const { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels, uniqueStatuses, uniqueTrendingRiskLevels, uniqueRiskReasons, uniqueTrendingRiskReasons } = useMemo(() => {
     if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
@@ -336,13 +256,9 @@ export default function AccountMetricsTableMonthly() {
         };
       }
       
-      // For non-FROZEN accounts, calculate trending risk
-      const trendingRisk = calculateTrendingRisk(account);
-      
+      // Use database-provided trending risk data (calculated by ETL)
       return {
         ...account,
-        trending_risk_level: trendingRisk.trending_risk_level,
-        trending_risk_flags: trendingRisk.trending_risk_flags,
         // Add calculated deltas for sorting
         spend_delta,
         texts_delta,
@@ -353,9 +269,20 @@ export default function AccountMetricsTableMonthly() {
 
     // Get unique values for all filter options
     const uniqueCSMs = Array.from(new Set(accountsWithTrending.map(acc => acc.csm).filter(Boolean))).sort();
-    const uniqueRiskLevels = Array.from(new Set(accountsWithTrending.map(acc => acc.riskLevel || acc.risk_level).filter(Boolean))).sort();
+
+    // Custom sort for risk levels by severity (high, medium, low)
+    const riskLevelOrder = ['high', 'medium', 'low'];
+    const sortRiskLevels = (levels: string[]) => {
+      return levels.sort((a, b) => {
+        const aIndex = riskLevelOrder.indexOf(a.toLowerCase());
+        const bIndex = riskLevelOrder.indexOf(b.toLowerCase());
+        return aIndex - bIndex;
+      });
+    };
+
+    const uniqueRiskLevels = sortRiskLevels(Array.from(new Set(accountsWithTrending.map(acc => acc.riskLevel || acc.risk_level).filter(Boolean))));
     const uniqueStatuses = Array.from(new Set(accountsWithTrending.map(acc => acc.status).filter(Boolean))).sort();
-    const uniqueTrendingRiskLevels = Array.from(new Set(accountsWithTrending.map(acc => acc.trending_risk_level).filter(Boolean))).sort();
+    const uniqueTrendingRiskLevels = sortRiskLevels(Array.from(new Set(accountsWithTrending.map(acc => acc.trending_risk_level).filter(Boolean))));
     
     // Get unique risk reasons from all accounts
     const allRiskReasons = new Set<string>();
@@ -634,7 +561,7 @@ export default function AccountMetricsTableMonthly() {
     const totalPages = Math.ceil(sortedAccounts.length / accountsPerPage);
 
     return { sortedAccounts, paginatedAccounts, totalPages, summaryStats, currentMonthStats, calculatedDeltas, uniqueCSMs, uniqueRiskLevels, uniqueStatuses, uniqueTrendingRiskLevels, uniqueRiskReasons, uniqueTrendingRiskReasons };
-  }, [accounts, selectedCSMs, selectedRiskLevel, searchQuery, selectedStatus, selectedTrendingRiskLevel, selectedRiskReasons, selectedTrendingRiskReasons, sortField, sortDirection, currentPage, timePeriod, calculateTrendingRiskLevel]);
+  }, [accounts, selectedCSMs, selectedRiskLevel, searchQuery, selectedStatus, selectedTrendingRiskLevel, selectedRiskReasons, selectedTrendingRiskReasons, sortField, sortDirection, currentPage, timePeriod]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', { 
@@ -736,37 +663,20 @@ export default function AccountMetricsTableMonthly() {
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-4 mb-4">
-            {timePeriod !== 'current_month' && (
-              <>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Search:</label>
-                  <Input
-                    type="text"
-                    placeholder="Search account names..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                    className="w-48"
-                  />
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Status:</label>
-                  <Select value={selectedStatus} onValueChange={(value) => { setSelectedStatus(value); setCurrentPage(1); }}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All Statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      {uniqueStatuses.map((status) => (
-                        <SelectItem key={status} value={status}>{status}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-            
+          <div className="flex flex-wrap items-center gap-4 mb-4">
+            {/* Search - Always first */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Search:</label>
+              <Input
+                type="text"
+                placeholder="Search account names..."
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                className="w-48"
+              />
+            </div>
+
+            {/* CSM - Always second */}
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-gray-700">CSM:</label>
               <MultiSelect
@@ -776,35 +686,26 @@ export default function AccountMetricsTableMonthly() {
                 placeholder="All CSMs"
               />
             </div>
-            
+
+            {/* Status - Third */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Status:</label>
+              <Select value={selectedStatus} onValueChange={(value) => { setSelectedStatus(value); setCurrentPage(1); }}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {uniqueStatuses.map((status) => (
+                    <SelectItem key={status} value={status}>{status}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Current month only filters */}
             {timePeriod === 'current_month' && (
               <>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Search:</label>
-                  <Input
-                    type="text"
-                    placeholder="Search account names..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                    className="w-48"
-                  />
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Status:</label>
-                  <Select value={selectedStatus} onValueChange={(value) => { setSelectedStatus(value); setCurrentPage(1); }}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All Statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      {uniqueStatuses.map((status) => (
-                        <SelectItem key={status} value={status}>{status}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium text-gray-700">Risk Level:</label>
                   <Select value={selectedRiskLevel} onValueChange={(value) => { setSelectedRiskLevel(value); setCurrentPage(1); }}>
@@ -819,7 +720,7 @@ export default function AccountMetricsTableMonthly() {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium text-gray-700">Trending Risk:</label>
                   <Select value={selectedTrendingRiskLevel} onValueChange={(value) => { setSelectedTrendingRiskLevel(value); setCurrentPage(1); }}>
@@ -834,29 +735,29 @@ export default function AccountMetricsTableMonthly() {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium text-gray-700">Risk Reasons:</label>
                   <MultiSelect
                     options={uniqueRiskReasons}
                     value={selectedRiskReasons}
                     onChange={(value) => { setSelectedRiskReasons(value); setCurrentPage(1); }}
-                    placeholder="All Risk Reasons"
+                    placeholder="All Selected"
                   />
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium text-gray-700">Trending Reasons:</label>
                   <MultiSelect
                     options={uniqueTrendingRiskReasons}
                     value={selectedTrendingRiskReasons}
                     onChange={(value) => { setSelectedTrendingRiskReasons(value); setCurrentPage(1); }}
-                    placeholder="All Trending Reasons"
+                    placeholder="All Selected"
                   />
                 </div>
               </>
             )}
-            
+
             <div className="text-sm text-gray-600 ml-auto">
               {accounts && (
                 <span>Showing {paginatedAccounts.length} of {sortedAccounts.length} accounts ({accounts.length} total)</span>

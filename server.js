@@ -741,7 +741,6 @@ app.get("/api/bigquery/accounts/monthly", async (req, res) => {
           AND cm.trending_risk_level IS NOT NULL
         LEFT JOIN monthly_metrics pm ON a.account_id = pm.account_id
           AND pm.month = ?
-          AND pm.historical_risk_level IS NOT NULL
         WHERE (
           -- Apply same filtering as other endpoints
           DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
