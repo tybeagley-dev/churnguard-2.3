@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, ReferenceArea, ReferenceLine } from "recharts";
 import { Flag } from "lucide-react";
 import { useMonthlyAccountHistory } from "@/hooks/use-monthly-accounts";
 
@@ -22,6 +22,7 @@ interface MonthlyMetric {
   coupons_redeemed: number;
   active_subs_cnt: number;
   risk_level?: string;
+  risk_reasons?: string[];
   risk_flags?: {
     monthlyRedemptionsFlag: boolean;
     lowActivityFlag: boolean;
@@ -126,30 +127,45 @@ export default function AccountDetailModal({
 
   const chartData = monthlyData?.map((item: MonthlyMetric, index: number) => {
     const previousMonth = index > 0 ? monthlyData[index - 1] : undefined;
-    
+
     // Calculate months of operation based on actual data
     // Find the first month with any activity (non-zero spend, texts, or redemptions)
-    const firstActiveMonthIndex = monthlyData.findIndex(month => 
+    const firstActiveMonthIndex = monthlyData.findIndex(month =>
       month.total_spend > 0 || month.total_texts_delivered > 0 || month.coupons_redeemed > 0
     );
-    
+
     // Calculate months since first activity (0-based, so +1 for actual month count)
     const monthsSinceFirstActivity = firstActiveMonthIndex >= 0 ? index - firstActiveMonthIndex + 1 : 0;
-    
+
     const riskData = calculateRiskForMonth(item, previousMonth, monthsSinceFirstActivity);
-    
+
     return {
       month: item.month_label,
       spend: item.total_spend,
       texts: item.total_texts_delivered,
       coupons: item.coupons_redeemed,
       subscriptions: item.active_subs_cnt,
-      riskLevel: riskData.riskLevel,
-      hasRiskFlag: riskData.flagCount > 0,
+      riskLevel: item.risk_level || 'low', // Use database historical_risk_level
+      riskReasons: item.risk_reasons || ['No flags'], // Use database risk_reasons
+      hasRiskFlag: (item.risk_level && item.risk_level !== 'low') || riskData.flagCount > 0,
       flagCount: riskData.flagCount,
-      riskFlags: riskData.flags
+      riskFlags: riskData.flags,
+      monthIndex: index // Add index for ReferenceArea positioning
     };
   }) || [];
+
+  // Helper function to get risk color (matching the legend squares)
+  const getRiskColor = (riskLevel: string) => {
+    switch (riskLevel?.toLowerCase()) {
+      case 'high':
+        return 'rgba(220, 38, 38, 0.15)'; // red-600 with 15% opacity
+      case 'medium':
+        return 'rgba(234, 88, 12, 0.15)'; // orange-600 with 15% opacity
+      case 'low':
+      default:
+        return 'rgba(34, 197, 94, 0.15)'; // green-600 with 15% opacity
+    }
+  };
 
   // Calculate summary metrics from latest month
   const latestMonth = monthlyData?.[monthlyData.length - 1];
@@ -268,12 +284,16 @@ export default function AccountDetailModal({
                 <div className="flex items-center space-x-4 text-xs text-gray-600 mt-2">
                   <span>Risk Indicators:</span>
                   <div className="flex items-center space-x-1">
-                    <div className="w-3 h-3 rounded-full bg-red-600"></div>
+                    <div className="w-3 h-3 bg-red-600"></div>
                     <span>High Risk</span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <div className="w-3 h-3 rounded-full bg-orange-600"></div>
+                    <div className="w-3 h-3 bg-orange-600"></div>
                     <span>Medium Risk</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <div className="w-3 h-3 bg-green-600"></div>
+                    <span>Low Risk</span>
                   </div>
                 </div>
               </CardHeader>
@@ -291,18 +311,33 @@ export default function AccountDetailModal({
                         height={80}
                       />
                       <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip 
-                        content={({ active, payload, label }) => {
+                      <Tooltip
+                        content={({ active, payload, label, coordinate }) => {
                           if (!active || !payload || !payload.length) return null;
-                          
-                          const dataPoint = chartData.find(d => d.month === label);
-                          
+
+                          // Find the closest data point based on the tooltip's position
+                          let closestDataPoint = chartData.find(d => d.month === label);
+
+                          // If we can't find an exact match, find the nearest data point
+                          if (!closestDataPoint && coordinate) {
+                            const chartWidth = coordinate.x || 0;
+                            const dataPointWidth = chartWidth / chartData.length;
+                            const hoveredIndex = Math.round(chartWidth / dataPointWidth);
+                            const clampedIndex = Math.max(0, Math.min(hoveredIndex, chartData.length - 1));
+                            closestDataPoint = chartData[clampedIndex];
+                          }
+
+                          // Fallback to first data point if still no match
+                          if (!closestDataPoint) {
+                            closestDataPoint = chartData[0];
+                          }
+
                           return (
                             <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
                               <div className="font-medium text-gray-900 mb-2">
-                                Month: {label}
+                                Month: {label || closestDataPoint?.month}
                               </div>
-                              
+
                               {/* Metric Values */}
                               <div className="space-y-1">
                                 {payload.map((entry: any) => {
@@ -313,11 +348,11 @@ export default function AccountDetailModal({
                                     coupons: 'Redemptions',
                                     subscriptions: 'Subscribers'
                                   }[entry.dataKey] || entry.dataKey;
-                                  
+
                                   return (
                                     <div key={entry.dataKey} className="flex items-center">
-                                      <div 
-                                        className="w-3 h-3 rounded-full mr-2" 
+                                      <div
+                                        className="w-3 h-3 rounded-full mr-2"
                                         style={{ backgroundColor: entry.color }}
                                       />
                                       <span className="text-sm">
@@ -327,36 +362,28 @@ export default function AccountDetailModal({
                                   );
                                 })}
                               </div>
-                              
+
                               {/* Risk Information */}
-                              {dataPoint?.hasRiskFlag && (
+                              {closestDataPoint && (
                                 <div className="mt-3 pt-2 border-t border-gray-100">
                                   <div className="flex items-center mb-1">
-                                    <div 
-                                      className={`w-3 h-3 rounded-full mr-2 ${
-                                        dataPoint.riskLevel === 'high' ? 'bg-red-600' : 'bg-orange-600'
+                                    <div
+                                      className={`w-3 h-3 mr-2 ${
+                                        closestDataPoint.riskLevel === 'high' ? 'bg-red-600' :
+                                        closestDataPoint.riskLevel === 'medium' ? 'bg-orange-600' : 'bg-green-600'
                                       }`}
                                     />
                                     <span className="text-sm font-medium text-gray-900">
-                                      {dataPoint.riskLevel?.toUpperCase()} RISK
+                                      {closestDataPoint.riskLevel?.toUpperCase() || 'LOW'} RISK
                                     </span>
                                   </div>
                                   <div className="text-xs text-gray-600 ml-5 space-y-1">
-                                    {dataPoint.riskFlags && (
-                                      <>
-                                        {dataPoint.riskFlags.monthlyRedemptionsFlag && (
-                                          <div>• Monthly Redemptions (≤ 3)</div>
-                                        )}
-                                        {dataPoint.riskFlags.lowActivityFlag && (
-                                          <div>• Low Activity (&lt; 300 subs + &lt; 35 redemptions)</div>
-                                        )}
-                                        {dataPoint.riskFlags.spendDropFlag && (
-                                          <div>• Spend Drop (≥ 40% decrease)</div>
-                                        )}
-                                        {dataPoint.riskFlags.redemptionsDropFlag && (
-                                          <div>• Redemptions Drop (≥ 50% decrease)</div>
-                                        )}
-                                      </>
+                                    {closestDataPoint.riskReasons && Array.isArray(closestDataPoint.riskReasons) ? (
+                                      closestDataPoint.riskReasons.map((reason: string, idx: number) => (
+                                        <div key={idx}>• {reason}</div>
+                                      ))
+                                    ) : (
+                                      <div>• No flags</div>
                                     )}
                                   </div>
                                 </div>
@@ -365,93 +392,69 @@ export default function AccountDetailModal({
                           );
                         }}
                       />
-                      
-                      {visibleMetrics.spend && (
-                        <Line 
-                          type="monotone" 
-                          dataKey="spend" 
-                          stroke="#8b5cf6" 
-                          strokeWidth={2}
-                          dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 4 }}
-                        />
-                      )}
-                      
-                      {visibleMetrics.texts && (
-                        <Line 
-                          type="monotone" 
-                          dataKey="texts" 
-                          stroke="#ea580c" 
-                          strokeWidth={2}
-                          dot={{ fill: '#ea580c', strokeWidth: 2, r: 4 }}
-                        />
-                      )}
-                      
-                      {visibleMetrics.coupons && (
-                        <Line 
-                          type="monotone" 
-                          dataKey="coupons" 
-                          stroke="#059669" 
-                          strokeWidth={2}
-                          dot={{ fill: '#059669', strokeWidth: 2, r: 4 }}
-                        />
-                      )}
-                      
-                      {visibleMetrics.subscriptions && (
-                        <Line 
-                          type="monotone" 
-                          dataKey="subscriptions" 
-                          stroke="#2563eb" 
-                          strokeWidth={2}
-                          dot={{ fill: '#2563eb', strokeWidth: 2, r: 4 }}
-                        />
-                      )}
-                      
-                      {/* Risk Flag Markers */}
+
+                      {/* Background colored areas for risk levels */}
                       {chartData.map((dataPoint, index) => {
-                        if (!dataPoint.hasRiskFlag) return null;
-                        
-                        const flagColor = dataPoint.riskLevel === 'high' ? '#dc2626' : '#ea580c'; // red for high, orange for medium
-                        const yPosition = Math.max(
-                          dataPoint.spend || 0,
-                          dataPoint.texts || 0, 
-                          dataPoint.coupons || 0,
-                          dataPoint.subscriptions || 0
-                        ) * 1.1; // Position flag above highest visible metric
-                        
+                        const currentMonth = dataPoint.month;
+                        const nextMonth = index < chartData.length - 1 ? chartData[index + 1].month : null;
+
+                        const x1 = currentMonth;
+                        const x2 = nextMonth || currentMonth;
+
                         return (
-                          <ReferenceDot
-                            key={`flag-${index}`}
-                            x={dataPoint.month}
-                            y={yPosition}
-                            r={8}
-                            fill={flagColor}
-                            stroke="#ffffff"
-                            strokeWidth={2}
-                            shape={(props: any) => {
-                              const { cx, cy } = props;
-                              return (
-                                <g>
-                                  <circle 
-                                    cx={cx} 
-                                    cy={cy} 
-                                    r={8} 
-                                    fill={flagColor} 
-                                    stroke="#ffffff" 
-                                    strokeWidth={2}
-                                  />
-                                  <Flag 
-                                    x={cx - 6} 
-                                    y={cy - 6} 
-                                    width={12} 
-                                    height={12} 
-                                    fill="#ffffff"
-                                  />
-                                </g>
-                              );
-                            }}
+                          <ReferenceArea
+                            key={`risk-bg-${index}`}
+                            x1={x1}
+                            x2={x2}
+                            fill={getRiskColor(dataPoint.riskLevel)}
+                            fillOpacity={1}
                           />
                         );
                       })}
+
+                      {visibleMetrics.spend && (
+                        <Line
+                          type="monotone"
+                          dataKey="spend"
+                          stroke="#8b5cf6"
+                          strokeWidth={2}
+                          dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 4 }}
+                          activeDot={{ fill: '#8b5cf6', stroke: '#8b5cf6', strokeWidth: 3, r: 6 }}
+                        />
+                      )}
+
+                      {visibleMetrics.texts && (
+                        <Line
+                          type="monotone"
+                          dataKey="texts"
+                          stroke="#ea580c"
+                          strokeWidth={2}
+                          dot={{ fill: '#ea580c', strokeWidth: 2, r: 4 }}
+                          activeDot={{ fill: '#ea580c', stroke: '#ea580c', strokeWidth: 3, r: 6 }}
+                        />
+                      )}
+
+                      {visibleMetrics.coupons && (
+                        <Line
+                          type="monotone"
+                          dataKey="coupons"
+                          stroke="#059669"
+                          strokeWidth={2}
+                          dot={{ fill: '#059669', strokeWidth: 2, r: 4 }}
+                          activeDot={{ fill: '#059669', stroke: '#059669', strokeWidth: 3, r: 6 }}
+                        />
+                      )}
+
+                      {visibleMetrics.subscriptions && (
+                        <Line
+                          type="monotone"
+                          dataKey="subscriptions"
+                          stroke="#2563eb"
+                          strokeWidth={2}
+                          dot={{ fill: '#2563eb', strokeWidth: 2, r: 4 }}
+                          activeDot={{ fill: '#2563eb', stroke: '#2563eb', strokeWidth: 3, r: 6 }}
+                        />
+                      )}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
