@@ -238,7 +238,7 @@ app.get("/api/bigquery/accounts", async (req, res) => {
         FROM accounts a
         INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id 
           AND mm.month = ? 
-          AND mm.month_status = 'current'
+          AND mm.trending_risk_level IS NOT NULL
         LEFT JOIN (
           SELECT 
             account_id,
@@ -693,15 +693,24 @@ app.get("/api/bigquery/accounts", async (req, res) => {
 
 app.get("/api/bigquery/accounts/monthly", async (req, res) => {
   try {
+    // Disable caching to prevent frontend infinite loops
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
     const { period = 'current_month' } = req.query;
     const currentMonth = new Date().toISOString().slice(0, 7);
-    
+
     console.log(`📅 Monthly API: period=${period}, currentMonth=${currentMonth}`);
     
     let accounts;
     
     if (period === 'current_month') {
-      // Current MTD: Use monthly_metrics table (raw values, updated daily by ETL)
+      // Current MTD: Use monthly_metrics table with both current month trending and previous month historical data
+      const prevMonth = new Date();
+      prevMonth.setMonth(prevMonth.getMonth() - 1);
+      const prevMonthStr = prevMonth.toISOString().slice(0, 7);
+      
       accounts = await db.all(`
         SELECT 
           a.account_id,
@@ -711,21 +720,28 @@ app.get("/api/bigquery/accounts/monthly", async (req, res) => {
           a.launched_at,
           
           -- Current month totals from monthly_metrics (updated daily by ETL)
-          COALESCE(mm.total_spend, 0) as total_spend,
-          COALESCE(mm.total_texts_delivered, 0) as total_texts_delivered,
-          COALESCE(mm.total_coupons_redeemed, 0) as coupons_redeemed,
-          COALESCE(ROUND(mm.avg_active_subs_cnt), 0) as active_subs_cnt,
+          COALESCE(cm.total_spend, 0) as total_spend,
+          COALESCE(cm.total_texts_delivered, 0) as total_texts_delivered,
+          COALESCE(cm.total_coupons_redeemed, 0) as coupons_redeemed,
+          COALESCE(ROUND(cm.avg_active_subs_cnt), 0) as active_subs_cnt,
           1 as location_cnt,
-          mm.last_updated as latest_activity,
+          cm.last_updated as latest_activity,
           
-          -- Use the pre-calculated historical_risk_level from monthly_metrics
-          COALESCE(mm.historical_risk_level, 'low') as risk_level,
-          mm.historical_risk_level as riskLevel
+          -- Current month trending risk data
+          COALESCE(cm.trending_risk_level, 'low') as trending_risk_level,
+          cm.trending_risk_reasons,
+          
+          -- Previous month historical risk data  
+          COALESCE(pm.historical_risk_level, 'low') as risk_level,
+          pm.risk_reasons
           
         FROM accounts a
-        INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id 
-          AND mm.month = ? 
-          AND mm.month_status = 'current'
+        INNER JOIN monthly_metrics cm ON a.account_id = cm.account_id 
+          AND cm.month = ? 
+          AND cm.trending_risk_level IS NOT NULL
+        LEFT JOIN monthly_metrics pm ON a.account_id = pm.account_id
+          AND pm.month = ?
+          AND pm.historical_risk_level IS NOT NULL
         WHERE (
           -- Apply same filtering as other endpoints
           DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
@@ -736,12 +752,19 @@ app.get("/api/bigquery/accounts/monthly", async (req, res) => {
         )
         ORDER BY 
           CASE 
-            WHEN mm.historical_risk_level = 'high' THEN 3
-            WHEN mm.historical_risk_level = 'medium' THEN 2
+            WHEN cm.trending_risk_level = 'high' THEN 3
+            WHEN cm.trending_risk_level = 'medium' THEN 2
             ELSE 1
           END DESC,
-          mm.total_spend DESC
-      `, currentMonth, currentMonth, currentMonth);
+          cm.total_spend DESC
+      `, currentMonth, prevMonthStr, currentMonth, currentMonth);
+      
+      // Parse JSON risk_reasons for both historical and trending data
+      accounts = accounts.map(account => ({
+        ...account,
+        risk_reasons: account.risk_reasons ? JSON.parse(account.risk_reasons) : ['No flags'],
+        trending_risk_reasons: account.trending_risk_reasons ? JSON.parse(account.trending_risk_reasons) : ['No flags']
+      }));
     } else if (period === 'previous_month') {
       // vs Previous MTD: Return unified view with all accounts from both periods
       const prevMonth = new Date();
@@ -784,11 +807,11 @@ app.get("/api/bigquery/accounts/monthly", async (req, res) => {
             COALESCE(mm.total_coupons_redeemed, 0) as current_coupons_redeemed,
             COALESCE(ROUND(mm.avg_active_subs_cnt), 0) as current_active_subs_cnt,
             mm.last_updated as current_latest_activity,
-            COALESCE(mm.historical_risk_level, 'low') as current_risk_level
+            COALESCE(mm.trending_risk_level, 'low') as current_risk_level
           FROM all_relevant_accounts ara
           LEFT JOIN monthly_metrics mm ON ara.account_id = mm.account_id 
             AND mm.month = ? 
-            AND mm.month_status = 'current'
+            AND mm.trending_risk_level IS NOT NULL
         ),
         previous_month_data AS (
           SELECT 
@@ -891,11 +914,11 @@ app.get("/api/bigquery/accounts/monthly", async (req, res) => {
             COALESCE(mm.total_coupons_redeemed, 0) as current_coupons_redeemed,
             COALESCE(ROUND(mm.avg_active_subs_cnt), 0) as current_active_subs_cnt,
             mm.last_updated as current_latest_activity,
-            COALESCE(mm.historical_risk_level, 'low') as current_risk_level
+            COALESCE(mm.trending_risk_level, 'low') as current_risk_level
           FROM all_relevant_accounts ara
           LEFT JOIN monthly_metrics mm ON ara.account_id = mm.account_id 
             AND mm.month = ? 
-            AND mm.month_status = 'current'
+            AND mm.trending_risk_level IS NOT NULL
         ),
         avg_comparison_data AS (
           SELECT 
@@ -1033,11 +1056,11 @@ app.get("/api/bigquery/accounts/monthly", async (req, res) => {
             COALESCE(mm.total_coupons_redeemed, 0) as current_coupons_redeemed,
             COALESCE(ROUND(mm.avg_active_subs_cnt), 0) as current_active_subs_cnt,
             mm.last_updated as current_latest_activity,
-            COALESCE(mm.historical_risk_level, 'low') as current_risk_level
+            COALESCE(mm.trending_risk_level, 'low') as current_risk_level
           FROM all_relevant_accounts ara
           LEFT JOIN monthly_metrics mm ON ara.account_id = mm.account_id 
             AND mm.month = ? 
-            AND mm.month_status = 'current'
+            AND mm.trending_risk_level IS NOT NULL
         ),
         last_year_data AS (
           SELECT 
@@ -1216,9 +1239,9 @@ app.get("/api/monthly-trends", async (_req, res) => {
         COUNT(DISTINCT mm.account_id) as total_accounts,
         
         -- Use pre-calculated historical risk levels
-        SUM(CASE WHEN mm.historical_risk_level = 'high' THEN 1 ELSE 0 END) as high_risk,
-        SUM(CASE WHEN mm.historical_risk_level = 'medium' THEN 1 ELSE 0 END) as medium_risk,
-        SUM(CASE WHEN mm.historical_risk_level = 'low' THEN 1 ELSE 0 END) as low_risk
+        SUM(CASE WHEN COALESCE(mm.trending_risk_level, mm.historical_risk_level) = 'high' THEN 1 ELSE 0 END) as high_risk,
+        SUM(CASE WHEN COALESCE(mm.trending_risk_level, mm.historical_risk_level) = 'medium' THEN 1 ELSE 0 END) as medium_risk,
+        SUM(CASE WHEN COALESCE(mm.trending_risk_level, mm.historical_risk_level) = 'low' THEN 1 ELSE 0 END) as low_risk
         
       FROM monthly_metrics mm
       INNER JOIN accounts a ON mm.account_id = a.account_id

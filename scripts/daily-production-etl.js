@@ -52,6 +52,12 @@ export class DailyProductionETL {
     return today.toISOString().substring(0, 7); // YYYY-MM
   }
 
+  getMonthEnd(yearMonth) {
+    const [year, month] = yearMonth.split('-');
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    return `${yearMonth}-${lastDay.toString().padStart(2, '0')}`;
+  }
+
   // Dynamic month label generation - Phase 1 of migration plan
   formatMonthLabel(monthString) {
     const [year, month] = monthString.split('-');
@@ -156,14 +162,8 @@ export class DailyProductionETL {
         return { historicalCalculationRan: false };
       }
       
-      // Mark the previous month as complete
-      await db.run(`
-        UPDATE monthly_metrics 
-        SET month_status = 'complete'
-        WHERE month = ?
-      `, [previousMonth]);
-      
-      console.log(`📅 Marked ${previousMonth} as complete, running historical risk calculation...`);
+      // Run historical risk calculation for the completed previous month
+      console.log(`📅 Running historical risk calculation for completed month ${previousMonth}...`);
       
       // Run historical risk level calculation for the completed month
       const historicalPopulator = new HistoricalRiskPopulator();
@@ -273,18 +273,21 @@ export class DailyProductionETL {
       // This ensures data integrity and self-healing capabilities
       const result = await db.run(`
         INSERT OR REPLACE INTO monthly_metrics (
-          account_id, 
-          month, 
+          account_id,
+          month,
           month_label,
-          total_spend, 
-          total_texts_delivered, 
-          total_coupons_redeemed, 
+          total_spend,
+          total_texts_delivered,
+          total_coupons_redeemed,
           avg_active_subs_cnt,
           days_with_activity,
-          month_status,
-          last_updated
+          last_updated,
+          historical_risk_level,
+          risk_reasons,
+          trending_risk_reasons,
+          trending_risk_level
         )
-        SELECT 
+        SELECT
           dm.account_id,
           ? as month,
           ? as month_label,
@@ -293,14 +296,23 @@ export class DailyProductionETL {
           COALESCE(SUM(dm.coupons_redeemed), 0) as total_coupons_redeemed,
           COALESCE(AVG(dm.active_subs_cnt), 0) as avg_active_subs_cnt,
           COUNT(DISTINCT dm.date) as days_with_activity,
-          ? as month_status,
-          datetime('now') as last_updated
+          datetime('now') as last_updated,
+          CASE
+            WHEN ? = strftime('%Y-%m', 'now') THEN NULL
+            ELSE (SELECT historical_risk_level FROM monthly_metrics WHERE account_id = dm.account_id AND month = ? LIMIT 1)
+          END as historical_risk_level,
+          CASE
+            WHEN ? = strftime('%Y-%m', 'now') THEN NULL
+            ELSE (SELECT risk_reasons FROM monthly_metrics WHERE account_id = dm.account_id AND month = ? LIMIT 1)
+          END as risk_reasons,
+          NULL as trending_risk_reasons,
+          NULL as trending_risk_level
         FROM daily_metrics dm
         INNER JOIN accounts a ON dm.account_id = a.account_id
         WHERE dm.date LIKE ? || '%'
           AND ? >= strftime('%Y-%m', a.launched_at)
         GROUP BY dm.account_id
-      `, [month, monthLabel, monthStatus, month, month]);
+      `, [month, monthLabel, month, month, month, month, month, month]);
 
       const monthsUpdated = result.changes || 0;
       
@@ -332,8 +344,9 @@ export class DailyProductionETL {
     const db = await this.getDatabase();
     
     try {
-      // Get all accounts with monthly metrics for current month
-      // Include LAUNCHED, FROZEN, and accounts archived during the current month
+      // Get all accounts with monthly metrics for current month using proper eligibility criteria
+      // Same criteria as Monthly Trends query
+      const monthEnd = this.getMonthEnd(currentMonth); // e.g., '2025-09-30'
       const accounts = await db.all(`
         SELECT 
           mm.*,
@@ -346,11 +359,14 @@ export class DailyProductionETL {
         JOIN accounts a ON mm.account_id = a.account_id
         WHERE mm.month = ?
         AND (
-          a.status IN ('LAUNCHED', 'FROZEN') OR 
-          (a.status = 'ARCHIVED' AND 
-           (COALESCE(a.archived_at, a.earliest_unit_archived_at) LIKE ? || '%'))
+          a.launched_at IS NOT NULL
+          AND a.launched_at <= ? || ' 23:59:59'
+          AND (
+            COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
+            OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= ? || '-01'
+          )
         )
-      `, [currentMonth, currentMonth]);
+      `, [currentMonth, monthEnd, currentMonth]);
 
       // Get previous month for drop calculations
       const previousMonth = this.getPreviousMonth(currentMonth);
@@ -396,21 +412,21 @@ export class DailyProductionETL {
         }
         
         // Calculate trending risk level using the full 8-flag system with proper comparisons
-        const riskLevel = this.calculateTrendingRiskLevel(account, dayOfMonth, account, previousMonthSameDayData);
+        const riskResult = this.calculateTrendingRiskLevel(account, dayOfMonth, account, previousMonthSameDayData);
         
-        // Update historical_risk_level in monthly_metrics table
+        // Update trending_risk_level and trending_risk_reasons in monthly_metrics table
         await db.run(`
           UPDATE monthly_metrics 
-          SET historical_risk_level = ?, last_updated = datetime('now')
+          SET trending_risk_level = ?, trending_risk_reasons = ?, last_updated = datetime('now')
           WHERE account_id = ? AND month = ?
-        `, [riskLevel, account.account_id, currentMonth]);
+        `, [riskResult.level, JSON.stringify(riskResult.reasons), account.account_id, currentMonth]);
         
         // Also update accounts table for quick dashboard access
         await db.run(`
           UPDATE accounts 
           SET risk_level = ?, last_updated = datetime('now')
           WHERE account_id = ?
-        `, [riskLevel, account.account_id]);
+        `, [riskResult.level, account.account_id]);
         
         accountsUpdated++;
       }
@@ -459,11 +475,15 @@ export class DailyProductionETL {
   }
 
   calculateTrendingRiskLevel(monthlyData, dayOfMonth, accountData, previousMonthData = null) {
+    const reasons = [];
+    
     // Use the same 8-flag system as historical calculations but with projected values
     
     // Check if account was archived during this specific month (regardless of current status)
-    const monthStart = new Date(monthlyData.month + '-01');
-    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+    const [year, month] = monthlyData.month.split('-');
+    const monthStart = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const monthEnd = new Date(parseInt(year), parseInt(month), 0);
+    monthEnd.setHours(23, 59, 59, 999);
     
     const archivedDate = accountData.archived_at 
       ? new Date(accountData.archived_at)
@@ -473,17 +493,24 @@ export class DailyProductionETL {
     
     // Flag 1: If archived during this specific month = high risk
     if (archivedDate && archivedDate >= monthStart && archivedDate <= monthEnd) {
-      return 'high';
+      reasons.push('Recently Archived');
+      return { level: 'high', reasons };
     }
     
     // Flags 2-3: FROZEN accounts logic
     if (accountData.status === 'FROZEN') {
       const hasCurrentMonthTexts = monthlyData.total_texts_delivered > 0;
+      reasons.push('Frozen Account Status');
       
       // Check if it's been 1+ month since last text (Frozen & Inactive)
       const isFrozenAndInactive = !hasCurrentMonthTexts;
       
-      return isFrozenAndInactive ? 'high' : 'medium';
+      if (isFrozenAndInactive) {
+        reasons.push('Frozen & Inactive');
+        return { level: 'high', reasons };
+      }
+      
+      return { level: 'medium', reasons };
     }
     
     // Flags 4-8: LAUNCHED/ACTIVE accounts: Flag-based system with projected values
@@ -492,33 +519,37 @@ export class DailyProductionETL {
     
     // Avoid division by zero for first day of month
     if (progressPercentage <= 0) {
-      return 'low'; // Not enough data to trend
+      reasons.push('No flags');
+      return { level: 'low', reasons }; // Not enough data to trend
     }
     
-    // Calculate projected month-end metrics
-    const projectedRedemptions = monthlyData.total_coupons_redeemed / progressPercentage;
-    const projectedSpend = monthlyData.total_spend / progressPercentage;
+    // Calculate proportional thresholds based on progress through month
+    const proportionalRedemptionsThreshold = this.MONTHLY_REDEMPTIONS_THRESHOLD * progressPercentage;
+    const proportionalLowEngagementRedemptionsThreshold = this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD * progressPercentage;
     
     let flagCount = 0;
     const monthsSinceStart = this.calculateMonthsSinceStart(accountData.launched_at, monthlyData.month);
     
-    // Flag 4: Monthly Redemptions (< 10 redemptions) - 1 point
-    if (projectedRedemptions < this.MONTHLY_REDEMPTIONS_THRESHOLD) {
+    // Flag 4: Monthly Redemptions (proportional to day of month) - 1 point
+    if (monthlyData.total_coupons_redeemed < proportionalRedemptionsThreshold) {
       flagCount++;
+      reasons.push('Low Monthly Redemptions');
     }
     
-    // Flag 5: Low Engagement Combo (< 300 subs AND < 35 redemptions) - 2 points
+    // Flag 5: Low Engagement Combo (< 300 subs AND proportional redemptions) - 2 points
     // Only available for accounts after their first two months
     if (monthsSinceStart > 2) {
       if (monthlyData.avg_active_subs_cnt < this.LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD && 
-          projectedRedemptions < this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD) {
+          monthlyData.total_coupons_redeemed < proportionalLowEngagementRedemptionsThreshold) {
         flagCount += 2;
+        reasons.push('Low Engagement Combo');
       }
     }
     
     // Flag 6: Low Activity (< 300 subscribers) - 1 point
     if (monthlyData.avg_active_subs_cnt < this.LOW_ACTIVITY_SUBS_THRESHOLD) {
       flagCount++;
+      reasons.push('Low Activity');
     }
     
     // Flags 7 & 8: Drop flags using same-day comparisons (apples-to-apples)
@@ -529,6 +560,7 @@ export class DailyProductionETL {
         const spendDrop = Math.max(0, (previousMonthData.total_spend - currentSpend) / previousMonthData.total_spend);
         if (spendDrop >= this.SPEND_DROP_THRESHOLD) {
           flagCount++;
+          reasons.push('Spend Drop');
         }
       }
       
@@ -538,14 +570,22 @@ export class DailyProductionETL {
         const redemptionsDrop = Math.max(0, (previousMonthData.total_coupons_redeemed - currentRedemptions) / previousMonthData.total_coupons_redeemed);
         if (redemptionsDrop >= this.REDEMPTIONS_DROP_THRESHOLD) {
           flagCount++;
+          reasons.push('Redemptions Drop');
         }
       }
     }
     
+    // If no flags, add "No flags"
+    if (reasons.length === 0) {
+      reasons.push('No flags');
+    }
+    
     // Determine risk level based on flag count (same as historical)
-    if (flagCount >= 3) return 'high';
-    if (flagCount >= 1) return 'medium';
-    return 'low';
+    let level = 'low';
+    if (flagCount >= 3) level = 'high';
+    else if (flagCount >= 1) level = 'medium';
+    
+    return { level, reasons };
   }
 
   async updateAccountSummaryMetrics() {

@@ -21,13 +21,15 @@ interface AccountMetric {
   latest_activity: string;
   risk_score?: number;
   risk_level?: string;
+  risk_reasons?: string[]; // Database-provided historical risk reasons (from previous completed month)
+  trending_risk_level?: string;
+  trending_risk_reasons?: string[]; // Database-provided trending risk reasons (from current month)
   risk_flags?: {
     monthlyRedemptionsFlag: boolean;
     lowActivityFlag: boolean;
     spendDropFlag: boolean;
     redemptionsDropFlag: boolean;
   };
-  trending_risk_level?: string;
   trending_risk_flags?: {
     monthlyRedemptionsFlag: boolean;
     lowActivityFlag: boolean;
@@ -64,17 +66,20 @@ const formatRiskFlags = (flags?: { monthlyRedemptionsFlag: boolean; lowActivityF
 
 // Helper function to extract individual risk reasons for filtering
 const getRiskReasons = (account: AccountMetric, isForTrending: boolean = false): string[] => {
+  // Use database-provided risk reasons when available
+  if (isForTrending && account.trending_risk_reasons) {
+    return account.trending_risk_reasons;
+  } else if (!isForTrending && account.risk_reasons) {
+    return account.risk_reasons;
+  }
+  
+  // Fallback to old flag-based calculation for comparison periods
   const flags = isForTrending ? account.trending_risk_flags : account.risk_flags;
   const reasons: string[] = [];
   
   // Handle FROZEN accounts specially
   if (account.status === 'FROZEN') {
     reasons.push('Frozen Account Status');
-    // Check if it's also inactive (no specific logic in current code, so we'll use a placeholder)
-    // This would need to be enhanced with actual last text date logic
-    if (account.risk_reason && account.risk_reason.includes('1+ month')) {
-      reasons.push('Frozen & Inactive');
-    }
     return reasons;
   }
   
@@ -83,11 +88,6 @@ const getRiskReasons = (account: AccountMetric, isForTrending: boolean = false):
   if (flags?.lowActivityFlag) reasons.push('Low Activity');  
   if (flags?.spendDropFlag) reasons.push('Spend Drop');
   if (flags?.redemptionsDropFlag) reasons.push('Redemptions Drop');
-  
-  // Note: We don't currently have data for:
-  // - Low Engagement Combo (would need separate flag)
-  // - Recently Archived (would need status check)
-  // These would need to be added to the backend data structure
   
   return reasons.length > 0 ? reasons : ['No flags'];
 };
@@ -112,14 +112,18 @@ export default function AccountMetricsTableMonthly() {
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['/api/bigquery/accounts/monthly', timePeriod],
     queryFn: () => fetch(`/api/bigquery/accounts/monthly?period=${timePeriod}`).then(res => res.json()),
-    enabled: true
+    enabled: true,
+    staleTime: 30000,
+    cacheTime: 300000
   });
 
   // Fetch current month data for comparison when not viewing current month
   const { data: currentMonthData } = useQuery({
     queryKey: ['/api/bigquery/accounts/monthly', 'current_month'],
     queryFn: () => fetch(`/api/bigquery/accounts/monthly?period=current_month`).then(res => res.json()),
-    enabled: timePeriod !== 'current_month'
+    enabled: timePeriod !== 'current_month',
+    staleTime: 30000,
+    cacheTime: 300000
   });
 
   const handleSort = (field: SortField) => {
@@ -362,8 +366,27 @@ export default function AccountMetricsTableMonthly() {
       getRiskReasons(acc, true).forEach(reason => allTrendingRiskReasons.add(reason));
     });
     
-    const uniqueRiskReasons = Array.from(allRiskReasons).sort();
-    const uniqueTrendingRiskReasons = Array.from(allTrendingRiskReasons).sort();
+    // Custom sort order for risk reasons
+    const riskReasonOrder = [
+      'Recently Archived', // Archived flag first
+      'Frozen Account Status', 'Frozen & Inactive', // Frozen options
+      'Low Activity', 'Low Engagement Combo', 'Low Monthly Redemptions', 'Redemptions Drop', 'Spend Drop', // Launched/active options alphabetically  
+      'No flags' // Bottom
+    ];
+    
+    const sortRiskReasons = (reasons: string[]) => {
+      return reasons.sort((a, b) => {
+        const aIndex = riskReasonOrder.indexOf(a);
+        const bIndex = riskReasonOrder.indexOf(b);
+        // If not found in order array, put at end (but before "No flags")
+        const aPos = aIndex === -1 ? riskReasonOrder.length - 1 : aIndex;
+        const bPos = bIndex === -1 ? riskReasonOrder.length - 1 : bIndex;
+        return aPos - bPos;
+      });
+    };
+    
+    const uniqueRiskReasons = sortRiskReasons(Array.from(allRiskReasons));
+    const uniqueTrendingRiskReasons = sortRiskReasons(Array.from(allTrendingRiskReasons));
 
     // Filter accounts based on search, status, CSMs, and risk level
     let filteredAccounts = accountsWithTrending;
@@ -1279,10 +1302,7 @@ export default function AccountMetricsTableMonthly() {
                           )}
                         </td>
                         <td className="p-3 text-xs text-gray-600 max-w-48">
-                          {account.status === 'FROZEN' 
-                            ? (account.risk_reason || 'Frozen')
-                            : formatRiskFlags(account.risk_flags)
-                          }
+                          {getRiskReasons(account, false).join(', ')}
                         </td>
                         <td className="p-3">
                           {account.trending_risk_level && (
@@ -1292,10 +1312,7 @@ export default function AccountMetricsTableMonthly() {
                           )}
                         </td>
                         <td className="p-3 text-xs text-gray-600 max-w-48">
-                          {account.status === 'FROZEN' 
-                            ? (account.trending_risk_reason || account.risk_reason || 'Frozen')
-                            : formatRiskFlags(account.trending_risk_flags)
-                          }
+                          {getRiskReasons(account, true).join(', ')}
                         </td>
                       </>
                     )}
