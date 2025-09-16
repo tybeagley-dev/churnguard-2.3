@@ -24,20 +24,37 @@ class DailySpendETLSQLite {
 
   async getSpendDataForDate(date) {
     console.log(`💰 Fetching spend data for ${date}...`);
-    
+
     const query = `
-      SELECT 
-        account_id,
-        SUM(total) as total_spend
-      FROM dbt_models.total_revenue_by_account_and_date 
-      WHERE date = DATE('${date}')
-      GROUP BY account_id
+      WITH account_unit_archive_dates AS (
+        SELECT
+          u.account_id,
+          MIN(u.archived_at) as earliest_unit_archived_at
+        FROM units.units u
+        WHERE u.status = 'ARCHIVED' AND u.archived_at IS NOT NULL
+        GROUP BY u.account_id
+      )
+
+      SELECT
+        tr.account_id,
+        SUM(tr.total) as total_spend
+      FROM dbt_models.total_revenue_by_account_and_date tr
+      INNER JOIN accounts.accounts a ON tr.account_id = a.id
+      LEFT JOIN account_unit_archive_dates aad ON a.id = aad.account_id
+      WHERE tr.date = DATE('${date}')
+        AND a.launched_at IS NOT NULL
+        AND DATE(a.launched_at) <= DATE('${date}')
+        AND (
+          COALESCE(a.archived_at, aad.earliest_unit_archived_at) IS NULL
+          OR DATE(COALESCE(a.archived_at, aad.earliest_unit_archived_at)) > LAST_DAY(DATE('${date}'))
+        )
+      GROUP BY tr.account_id
       HAVING total_spend > 0
-      ORDER BY account_id
+      ORDER BY tr.account_id
     `;
 
     const [rows] = await this.bigquery.query({ query, location: 'US' });
-    console.log(`✅ Found spend data for ${rows.length} accounts on ${date}`);
+    console.log(`✅ Found spend data for ${rows.length} eligible accounts on ${date}`);
     return rows;
   }
 
