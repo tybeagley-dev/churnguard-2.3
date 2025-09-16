@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 // Import our organized modules
 import { getSharedDatabase } from './config/database.js';
 import historicalPerformanceRoutes from './src/routes/historical-performance.routes.js';
+import monthlyTrendsRoutes from './src/routes/monthly-trends.routes.js';
+import weeklyViewRoutes from './src/routes/weekly-view.routes.js';
 
 const app = express();
 const port = process.env.PORT || 3003;
@@ -34,6 +36,8 @@ app.get('/api/test', (req, res) => {
 
 // Mount route modules
 app.use('/api', historicalPerformanceRoutes);
+app.use('/api', monthlyTrendsRoutes);
+app.use('/api', weeklyViewRoutes);
 
 // Serve frontend for all other routes
 app.get('*', (req, res) => {
