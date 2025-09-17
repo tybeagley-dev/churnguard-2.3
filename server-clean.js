@@ -7,6 +7,7 @@ import { getSharedDatabase } from './config/database.js';
 import historicalPerformanceRoutes from './src/routes/historical-performance.routes.js';
 import monthlyTrendsRoutes from './src/routes/monthly-trends.routes.js';
 import weeklyViewRoutes from './src/routes/weekly-view.routes.js';
+import accountMetricsOverviewRoutes from './src/routes/account-metrics-overview.routes.js';
 import accountsRoutes from './src/routes/accounts.routes.js';
 import authRoutes from './src/routes/auth.routes.js';
 
@@ -46,6 +47,7 @@ app.get('/api/test', (req, res) => {
 app.use('/api', historicalPerformanceRoutes);
 app.use('/api', monthlyTrendsRoutes);
 app.use('/api', weeklyViewRoutes);
+app.use('/api', accountMetricsOverviewRoutes);
 app.use('/api', accountsRoutes);
 app.use('/api', authRoutes);
 

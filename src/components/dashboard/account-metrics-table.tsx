@@ -51,11 +51,33 @@ export default function AccountMetricsTable() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const accountsPerPage = 25;
 
-  const { data: accounts, isLoading } = useQuery({
-    queryKey: ['/api/bigquery/accounts', timePeriod],
-    queryFn: () => fetch(`/api/bigquery/accounts?period=${timePeriod}`).then(res => res.json()),
+  const { data: accountsResponse, isLoading } = useQuery({
+    queryKey: ['/api/account-metrics-overview', timePeriod],
+    queryFn: () => {
+      // Map old period values to new dual-parameter structure
+      const comparison = timePeriod === 'current_week' ? null :
+        timePeriod === 'previous_week' ? 'vs_previous_wtd' :
+        timePeriod === 'six_week_average' ? 'vs_6_week_avg' :
+        timePeriod === 'same_week_last_month' ? 'vs_same_wtd_last_month' :
+        timePeriod === 'same_week_last_year' ? 'vs_same_wtd_last_year' :
+        null;
+
+      const url = comparison
+        ? `/api/account-metrics-overview?baseline=current_week&comparison=${comparison}`
+        : `/api/account-metrics-overview?baseline=current_week`;
+
+      return fetch(url, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      }).then(res => res.json());
+    },
     enabled: true
   });
+
+  // Extract accounts from new response structure
+  const accounts = accountsResponse?.baseline?.accounts || accountsResponse?.accounts || [];
 
 
   const handleSort = (field: SortField) => {
@@ -186,7 +208,7 @@ export default function AccountMetricsTable() {
       totalSubscribers: 0,
     });
 
-    // Calculate current week statistics and deltas (for comparison views)
+    // Use backend-provided metrics for summary cards
     let currentWeekStats = { ...summaryStats };
     let calculatedDeltas = {
       spendDelta: 0,
@@ -195,33 +217,26 @@ export default function AccountMetricsTable() {
       subscribersDelta: 0,
     };
 
-    if (timePeriod !== 'current_week') {
-      // For comparison periods, calculate current week totals and deltas
-      currentWeekStats = filteredAccounts.reduce((acc, account) => {
-        acc.totalSpend += account.current_total_spend || 0;
-        acc.totalRedemptions += account.current_coupons_redeemed || 0;
-        acc.totalTexts += account.current_total_texts_delivered || 0;
-        acc.totalSubscribers += account.current_active_subs_cnt || 0;
-        return acc;
-      }, {
+    if (timePeriod !== 'current_week' && accountsResponse?.baseline && accountsResponse?.comparison) {
+      // Use pre-calculated metrics from backend API response
+      currentWeekStats = {
         totalAccounts: summaryStats.totalAccounts,
         highRiskCount: summaryStats.highRiskCount,
         medRiskCount: summaryStats.medRiskCount,
         lowRiskCount: summaryStats.lowRiskCount,
-        totalSpend: 0,
-        totalRedemptions: 0,
-        totalTexts: 0,
-        totalSubscribers: 0,
-      });
+        totalSpend: accountsResponse.baseline.metrics.total_spend,
+        totalTexts: accountsResponse.baseline.metrics.total_texts,
+        totalRedemptions: accountsResponse.baseline.metrics.total_redemptions,
+        totalSubscribers: accountsResponse.baseline.metrics.total_subscribers,
+      };
 
-      // Calculate deltas from individual account deltas
-      calculatedDeltas = filteredAccounts.reduce((acc, account) => {
-        acc.spendDelta += (account.current_total_spend || 0) - (account.total_spend || 0);
-        acc.textsDelta += (account.current_total_texts_delivered || 0) - (account.total_texts_delivered || 0);
-        acc.redemptionsDelta += (account.current_coupons_redeemed || 0) - (account.coupons_redeemed || 0);
-        acc.subscribersDelta += (account.current_active_subs_cnt || 0) - (account.active_subs_cnt || 0);
-        return acc;
-      }, { spendDelta: 0, textsDelta: 0, redemptionsDelta: 0, subscribersDelta: 0 });
+      // Calculate deltas from backend metrics
+      calculatedDeltas = {
+        spendDelta: accountsResponse.baseline.metrics.total_spend - accountsResponse.comparison.metrics.total_spend,
+        textsDelta: accountsResponse.baseline.metrics.total_texts - accountsResponse.comparison.metrics.total_texts,
+        redemptionsDelta: accountsResponse.baseline.metrics.total_redemptions - accountsResponse.comparison.metrics.total_redemptions,
+        subscribersDelta: accountsResponse.baseline.metrics.total_subscribers - accountsResponse.comparison.metrics.total_subscribers,
+      };
     }
 
 
@@ -631,7 +646,7 @@ export default function AccountMetricsTable() {
                         </Badge>
                       </td>
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatCurrencyWhole(timePeriod === 'current_week' ? account.total_spend : (account.current_total_spend || 0))}
+                        {formatCurrencyWhole(account.total_spend)}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">
@@ -639,7 +654,7 @@ export default function AccountMetricsTable() {
                         </td>
                       )}
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatNumber(timePeriod === 'current_week' ? account.total_texts_delivered : (account.current_total_texts_delivered || 0))}
+                        {formatNumber(account.total_texts_delivered)}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">
@@ -647,7 +662,7 @@ export default function AccountMetricsTable() {
                         </td>
                       )}
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatNumber(timePeriod === 'current_week' ? account.coupons_redeemed : (account.current_coupons_redeemed || 0))}
+                        {formatNumber(account.coupons_redeemed)}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">
@@ -655,7 +670,7 @@ export default function AccountMetricsTable() {
                         </td>
                       )}
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatNumber(timePeriod === 'current_week' ? account.active_subs_cnt : (account.current_active_subs_cnt || 0))}
+                        {formatNumber(account.active_subs_cnt)}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">
