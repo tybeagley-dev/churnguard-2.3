@@ -37,9 +37,15 @@ export default function AccountDetailModal({
   });
 
   const { data: weeklyData, isLoading } = useQuery({
-    queryKey: ['/api/bigquery/account-history', accountId],
-    queryFn: () => 
-      fetch(`/api/bigquery/account-history/${accountId}`)
+    queryKey: ['/api/account-history', accountId],
+    queryFn: () =>
+      fetch(`/api/account-history/${accountId}`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      })
         .then(res => {
           if (!res.ok) throw new Error('Failed to fetch account history');
           return res.json();
@@ -67,18 +73,8 @@ export default function AccountDetailModal({
     return new Intl.NumberFormat('en-US').format(value);
   };
 
-  const formatWeekLabel = (weekYr: string) => {
-    // Convert "2024W45" to "Week 45, 2024"
-    const year = weekYr.substring(0, 4);
-    const week = weekYr.substring(5);
-    return `Week ${week}, ${year}`;
-  };
-
-  // Prepare chart data
-  const chartData = weeklyData?.map((item: WeeklyMetric) => ({
-    ...item,
-    week_label: formatWeekLabel(item.week_yr),
-  })) || [];
+  // Prepare chart data - use backend's week_label directly
+  const chartData = weeklyData || [];
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -186,8 +182,8 @@ export default function AccountDetailModal({
               <ResponsiveContainer width="100%" height={400}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="week_label" 
+                  <XAxis
+                    dataKey="week_yr"
                     angle={-45}
                     textAnchor="end"
                     height={80}
@@ -197,7 +193,7 @@ export default function AccountDetailModal({
                     tickFormatter={(value) => formatNumber(value)}
                     fontSize={12}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={(value, name) => {
                       const formatValue = name === 'total_spend' ? formatCurrency(Number(value)) : formatNumber(Number(value));
                       const displayName = name === 'total_spend' ? 'Spend' :
@@ -205,7 +201,12 @@ export default function AccountDetailModal({
                                          name === 'coupons_redeemed' ? 'Redemptions' : 'Subscribers';
                       return [formatValue, displayName];
                     }}
-                    labelFormatter={(label) => label}
+                    labelFormatter={(label, payload) => {
+                      if (payload && payload[0] && payload[0].payload) {
+                        return payload[0].payload.week_label;
+                      }
+                      return label;
+                    }}
                   />
                   <Legend />
                   
@@ -273,7 +274,7 @@ export default function AccountDetailModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {chartData.map((item, index) => (
+                    {[...chartData].reverse().map((item, index) => (
                       <tr key={item.week_yr} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
                         <td className="p-3 font-medium">{item.week_label}</td>
                         <td className="p-3 text-right font-mono">{formatCurrency(item.total_spend || 0)}</td>
