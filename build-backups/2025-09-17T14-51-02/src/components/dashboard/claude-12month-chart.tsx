@@ -10,7 +10,7 @@ export interface Claude12MonthData {
   total_accounts: number;
   accounts_below_minimum: number;
   spend_original: number;
-  total_spend: number;
+  spend_adjusted: number;
   spend_adjustment: number;
   total_redemptions: number;
   total_subscribers: number;
@@ -44,7 +44,7 @@ function formatLargeNumber(value: number): string {
 
 export function Claude12MonthChart() {
   const [selectedMetrics, setSelectedMetrics] = useState({
-    total_spend: true,
+    spend_adjusted: true,
     total_accounts: true,
     total_redemptions: true,
     total_subscribers: true,
@@ -134,7 +134,7 @@ export function Claude12MonthChart() {
   const totalAccounts = Math.max(...claude12MonthData.map(d => d.total_accounts)); // Get peak account count
 
   const metrics = [
-    { key: 'total_spend', label: 'Total Spend', color: '#8b5cf6', bgColor: 'bg-purple-50', textColor: 'text-purple-600' },
+    { key: 'spend_adjusted', label: 'Spend Adjusted', color: '#8b5cf6', bgColor: 'bg-purple-50', textColor: 'text-purple-600' },
     { key: 'total_accounts', label: 'Total Accounts', color: '#f97316', bgColor: 'bg-orange-50', textColor: 'text-orange-600' },
     { key: 'total_redemptions', label: 'Total Redemptions', color: '#16a34a', bgColor: 'bg-green-50', textColor: 'text-green-600' },
     { key: 'total_subscribers', label: 'Total Subscribers', color: '#2563eb', bgColor: 'bg-blue-50', textColor: 'text-blue-600' },
@@ -147,9 +147,9 @@ export function Claude12MonthChart() {
       return (
         <div className="bg-white border rounded-lg shadow-lg p-3">
           <p className="font-semibold">{data.month_label}</p>
-          {selectedMetrics.total_spend && (
+          {selectedMetrics.spend_adjusted && (
             <p className="text-purple-600">
-              Total Spend: {formatCurrency(data.total_spend)}
+              Spend Adjusted: {formatCurrency(data.spend_adjusted)}
             </p>
           )}
           {selectedMetrics.total_accounts && (
@@ -233,10 +233,10 @@ export function Claude12MonthChart() {
               />
               <Tooltip content={<CustomTooltip />} />
               
-              {selectedMetrics.total_spend && (
+              {selectedMetrics.spend_adjusted && (
                 <Line
                   type="monotone"
-                  dataKey="total_spend"
+                  dataKey="spend_adjusted"
                   stroke="#8b5cf6"
                   strokeWidth={3}
                   dot={{ fill: "#8b5cf6", strokeWidth: 2, r: 4 }}

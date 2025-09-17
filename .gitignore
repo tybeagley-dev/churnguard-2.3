@@ -6,7 +6,7 @@ data/
 
 # Environment and credentials
 .env
-.bigquery-credentials.json
+config/credentials/bigquery-credentials.json
 test-auth.json
 *-credentials.json
 *-auth.json

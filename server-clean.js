@@ -7,6 +7,8 @@ import { getSharedDatabase } from './config/database.js';
 import historicalPerformanceRoutes from './src/routes/historical-performance.routes.js';
 import monthlyTrendsRoutes from './src/routes/monthly-trends.routes.js';
 import weeklyViewRoutes from './src/routes/weekly-view.routes.js';
+import accountsRoutes from './src/routes/accounts.routes.js';
+import authRoutes from './src/routes/auth.routes.js';
 
 const app = express();
 const port = process.env.PORT || 3003;
@@ -18,6 +20,12 @@ const __dirname = path.dirname(__filename);
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
+
+// Request logging middleware
+app.use('/api', (req, res, next) => {
+  console.log(`🌐 ${req.method} ${req.path}`);
+  next();
+});
 
 // Initialize database connection
 let db;
@@ -38,6 +46,8 @@ app.get('/api/test', (req, res) => {
 app.use('/api', historicalPerformanceRoutes);
 app.use('/api', monthlyTrendsRoutes);
 app.use('/api', weeklyViewRoutes);
+app.use('/api', accountsRoutes);
+app.use('/api', authRoutes);
 
 // Serve frontend for all other routes
 app.get('*', (req, res) => {
