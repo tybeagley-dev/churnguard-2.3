@@ -1,10 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 
-export function useMonthlyAccounts(period: string = 'current_month') {
+export function useMonthlyAccounts(comparison?: string) {
   return useQuery({
-    queryKey: ['/api/bigquery/accounts/monthly', period],
+    queryKey: ['/api/account-metrics-monthly', comparison],
     queryFn: async () => {
-      const response = await fetch(`/api/bigquery/accounts/monthly?period=${period}`);
+      const params = new URLSearchParams();
+      if (comparison) {
+        params.append('comparison', comparison);
+      }
+      const url = `/api/account-metrics-monthly${params.toString() ? '?' + params.toString() : ''}`;
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch monthly accounts');
       }

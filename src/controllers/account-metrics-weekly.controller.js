@@ -2,7 +2,7 @@ import {
   getCurrentWeekBaselineData,
   getComparisonData,
   calculateAccountDeltas
-} from '../services/account-metrics-overview.service.js';
+} from '../services/account-metrics-weekly.service.js';
 
 export const getAccountMetricsOverview = async (req, res) => {
   try {
