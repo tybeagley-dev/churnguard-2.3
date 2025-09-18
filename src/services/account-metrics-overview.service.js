@@ -1,10 +1,13 @@
 import { getSharedDatabase } from '../../config/database.js';
 import { ChurnGuardCalendar } from '../utils/calendar.js';
 
-const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label = '') => {
+const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label = '', eligibilityMonth = null) => {
   const db = await getSharedDatabase();
 
-  console.log(`📊 Account Metrics Overview - ${label}: ${weekStart} to ${weekEnd}`);
+  // Use eligibilityMonth if provided, otherwise derive from weekStart
+  const effectiveEligibilityMonth = eligibilityMonth || weekStart.substring(0, 7);
+
+  console.log(`📊 Account Metrics Overview - ${label}: ${weekStart} to ${weekEnd} (eligibility: ${effectiveEligibilityMonth})`);
 
   const accounts = await db.all(`
     SELECT
@@ -23,7 +26,7 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
     FROM accounts a
     INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id
       AND mm.month = ?
-      AND mm.trending_risk_level IS NOT NULL
+      AND COALESCE(mm.trending_risk_level, mm.historical_risk_level) IS NOT NULL
     LEFT JOIN (
       SELECT
         account_id,
@@ -35,8 +38,16 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
       WHERE date >= ? AND date <= ?
       GROUP BY account_id
     ) period_data ON a.account_id = period_data.account_id
+    WHERE (
+      -- Account eligibility: launched by eligibility period-end, not archived before eligibility period-start
+      DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+      AND (
+        (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
+        OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(? || '-01')
+      )
+    )
     ORDER BY a.account_name ASC
-  `, month, weekStart, weekEnd);
+  `, month, weekStart, weekEnd, effectiveEligibilityMonth, effectiveEligibilityMonth);
 
   // Calculate aggregated totals for upper portion (summary cards)
   const totals = accounts.reduce((acc, account) => {
@@ -105,11 +116,13 @@ export const getComparisonData = async (comparisonPeriod) => {
       const prevWeekEnd = new Date(prevWeekStart);
       prevWeekEnd.setDate(prevWeekStart.getDate() + currentDayCount - 1);
 
+      const comparisonEligibilityMonth = ChurnGuardCalendar.formatDateISO(prevWeekStart).substring(0, 7);
       return await getAccountMetricsDataForPeriod(
         ChurnGuardCalendar.formatDateISO(prevWeekStart),
         ChurnGuardCalendar.formatDateISO(prevWeekEnd),
-        currentMonth,
-        'Previous WTD'
+        comparisonEligibilityMonth,
+        'Previous WTD',
+        comparisonEligibilityMonth
       );
     }
 
@@ -123,11 +136,13 @@ export const getComparisonData = async (comparisonPeriod) => {
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + currentDayCount - 1);
 
+        const eligibilityMonth = ChurnGuardCalendar.formatDateISO(weekStart).substring(0, 7);
         const data = await getAccountMetricsDataForPeriod(
           ChurnGuardCalendar.formatDateISO(weekStart),
           ChurnGuardCalendar.formatDateISO(weekEnd),
-          currentMonth,
-          `Week ${weekOffset} ago`
+          eligibilityMonth,
+          `Week ${weekOffset} ago`,
+          eligibilityMonth
         );
         weeklyData.push(data);
       }
@@ -201,11 +216,13 @@ export const getComparisonData = async (comparisonPeriod) => {
       const lastMonthWeekEnd = new Date(lastMonthWeekStart);
       lastMonthWeekEnd.setDate(lastMonthWeekStart.getDate() + currentDayCount - 1);
 
+      const comparisonEligibilityMonth = ChurnGuardCalendar.formatDateISO(lastMonthWeekStart).substring(0, 7);
       return await getAccountMetricsDataForPeriod(
         ChurnGuardCalendar.formatDateISO(lastMonthWeekStart),
         ChurnGuardCalendar.formatDateISO(lastMonthWeekEnd),
-        currentMonth,
-        'Same WTD Last Month'
+        comparisonEligibilityMonth,
+        'Same WTD Last Month',
+        comparisonEligibilityMonth
       );
     }
 
@@ -216,11 +233,13 @@ export const getComparisonData = async (comparisonPeriod) => {
       const lastYearWeekEnd = new Date(lastYearWeekStart);
       lastYearWeekEnd.setDate(lastYearWeekStart.getDate() + currentDayCount - 1);
 
+      const comparisonEligibilityMonth = ChurnGuardCalendar.formatDateISO(lastYearWeekStart).substring(0, 7);
       return await getAccountMetricsDataForPeriod(
         ChurnGuardCalendar.formatDateISO(lastYearWeekStart),
         ChurnGuardCalendar.formatDateISO(lastYearWeekEnd),
-        currentMonth,
-        'Same WTD Last Year'
+        comparisonEligibilityMonth,
+        'Same WTD Last Year',
+        comparisonEligibilityMonth
       );
     }
 
@@ -230,15 +249,45 @@ export const getComparisonData = async (comparisonPeriod) => {
 };
 
 export const calculateAccountDeltas = (baselineAccounts, comparisonAccounts) => {
-  // Create lookup map for comparison accounts
+  // Create lookup maps for both datasets
+  const baselineMap = new Map();
+  baselineAccounts.forEach(account => {
+    baselineMap.set(account.account_id, account);
+  });
+
   const comparisonMap = new Map();
   comparisonAccounts.forEach(account => {
     comparisonMap.set(account.account_id, account);
   });
 
-  // Add deltas to baseline accounts
-  return baselineAccounts.map(baselineAccount => {
-    const comparisonAccount = comparisonMap.get(baselineAccount.account_id) || {
+  // Create union of all account IDs
+  const allAccountIds = new Set([
+    ...baselineMap.keys(),
+    ...comparisonMap.keys()
+  ]);
+
+  // Build unified account list with deltas and status labels
+  return Array.from(allAccountIds).map(accountId => {
+    const baselineAccount = baselineMap.get(accountId);
+    const comparisonAccount = comparisonMap.get(accountId);
+
+    // Determine status label
+    let statusLabel = null;
+    if (!comparisonAccount && baselineAccount) {
+      statusLabel = '🟢 Current Period Only';
+    } else if (comparisonAccount && !baselineAccount) {
+      statusLabel = '🔴 Comparison Period Only';
+    }
+
+    // Use baseline account data if available, otherwise comparison account data
+    const baseAccount = baselineAccount || comparisonAccount;
+    const baselineMetrics = baselineAccount || {
+      total_spend: 0,
+      total_texts_delivered: 0,
+      coupons_redeemed: 0,
+      active_subs_cnt: 0
+    };
+    const comparisonMetrics = comparisonAccount || {
       total_spend: 0,
       total_texts_delivered: 0,
       coupons_redeemed: 0,
@@ -246,11 +295,16 @@ export const calculateAccountDeltas = (baselineAccounts, comparisonAccounts) => 
     };
 
     return {
-      ...baselineAccount,
-      spend_delta: baselineAccount.total_spend - comparisonAccount.total_spend,
-      texts_delta: baselineAccount.total_texts_delivered - comparisonAccount.total_texts_delivered,
-      coupons_delta: baselineAccount.coupons_redeemed - comparisonAccount.coupons_redeemed,
-      subs_delta: baselineAccount.active_subs_cnt - comparisonAccount.active_subs_cnt
+      ...baseAccount,
+      total_spend: baselineMetrics.total_spend,
+      total_texts_delivered: baselineMetrics.total_texts_delivered,
+      coupons_redeemed: baselineMetrics.coupons_redeemed,
+      active_subs_cnt: baselineMetrics.active_subs_cnt,
+      status_label: statusLabel,
+      spend_delta: baselineMetrics.total_spend - comparisonMetrics.total_spend,
+      texts_delta: baselineMetrics.total_texts_delivered - comparisonMetrics.total_texts_delivered,
+      coupons_delta: baselineMetrics.coupons_redeemed - comparisonMetrics.coupons_redeemed,
+      subs_delta: baselineMetrics.active_subs_cnt - comparisonMetrics.active_subs_cnt
     };
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name));
 };

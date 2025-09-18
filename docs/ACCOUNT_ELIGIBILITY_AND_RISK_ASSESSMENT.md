@@ -43,12 +43,19 @@ ChurnGuard uses **two distinct risk assessment approaches**:
 - Archived during the specific month
 - FROZEN status with no text messages sent
 
-**Flag-Based System for LAUNCHED accounts:**
+**Complete 8-Flag System:**
+
+**Flags 1-5 (LAUNCHED accounts only):**
 - **Flag 1** (1 point): Monthly redemptions < 10
 - **Flag 2** (2 points): Low engagement combo - < 300 subs AND < 35 redemptions *(after month 2)*
 - **Flag 3** (1 point): Low activity - < 300 subscribers
 - **Flag 4** (1 point): Spend drop ≥ 40% from previous month *(after month 3)*
 - **Flag 5** (1 point): Redemptions drop ≥ 50% from previous month *(after month 3)*
+
+**Flags 6-8 (Status-based, automatic assignment):**
+- **Flag 6**: FROZEN status with text messages sent → Medium risk
+- **Flag 7**: FROZEN status with no text messages sent → High risk
+- **Flag 8**: ARCHIVED during analysis period → High risk
 
 **Risk Levels:**
 - **≥ 3 flags**: High risk
@@ -61,20 +68,20 @@ ChurnGuard uses **two distinct risk assessment approaches**:
 **Applied to**: Current month only
 
 #### Algorithm
-Uses the same flag-based system as historical but with **real-time projections**:
+Uses the same 8-flag system as historical but with **month-to-date time windows**:
 
-**Proportional Calculations:**
+**For Flags 1-3 (Proportional Calculations):**
 - Progress percentage: `(dayOfMonth - 1) / daysInMonth`
 - Proportional redemptions threshold: `10 * progressPercentage`
 - Proportional low engagement threshold: `35 * progressPercentage`
 
-**Same-Day Comparisons:**
-- Flags 7 & 8 compare current month-to-date with previous month's same-day totals (apples-to-apples)
+**For Flags 4-5 (MTD Comparisons):**
+- Direct comparison of current month-to-date vs previous month same-day totals
+- **Flag 4**: Spend drop ≥ 40% (current MTD vs previous month same days)
+- **Flag 5**: Redemptions drop ≥ 50% (current MTD vs previous month same days)
 
-**8-Flag Extended System:**
-- Flags 1-6: Same as historical with proportional thresholds
-- **Flag 7** (1 point): Spend drop ≥ 40% vs same day previous month
-- **Flag 8** (1 point): Redemptions drop ≥ 50% vs same day previous month
+**For Flags 6-8 (Status-Based):**
+- Applied immediately based on account status (same as historical)
 
 ## Service Implementation
 
@@ -116,12 +123,12 @@ This ensures:
 
 ## Status-Based Rules
 
-| Account Status | Risk Level | Condition |
-|----------------|------------|-----------|
-| ARCHIVED | High | If archived during analysis period |
-| FROZEN + No Texts | High | No activity in current period |
-| FROZEN + Has Texts | Medium | Limited but present activity |
-| LAUNCHED | Flag-based | Uses comprehensive flag system |
+| Account Status | Flag Applied | Risk Level | Processing |
+|----------------|--------------|------------|-----------|
+| ARCHIVED | Flag 8 | High | Skip Flags 1-7 |
+| FROZEN + No Texts | Flag 7 | High | Skip Flags 1-6 |
+| FROZEN + Has Texts | Flag 6 | Medium | Skip Flags 1-5 |
+| LAUNCHED | Flags 1-5 | Count-based | Evaluate all applicable flags |
 
 ---
 

@@ -21,6 +21,7 @@ interface AccountMetric {
   latest_activity?: string;
   risk_score?: number;
   risk_level?: string;
+  status_label?: string;
   // Delta fields for comparison periods
   spend_delta?: number;
   texts_delta?: number;
@@ -76,8 +77,8 @@ export default function AccountMetricsTable() {
     enabled: true
   });
 
-  // Extract accounts from new response structure
-  const accounts = accountsResponse?.baseline?.accounts || accountsResponse?.accounts || [];
+  // Extract accounts from new response structure - use union dataset when available
+  const accounts = accountsResponse?.accounts || accountsResponse?.baseline?.accounts || [];
 
 
   const handleSort = (field: SortField) => {
@@ -608,6 +609,9 @@ export default function AccountMetricsTable() {
                     <SortableHeader field="name" className="text-left">Account</SortableHeader>
                     <SortableHeader field="csm" className="text-left">CSM</SortableHeader>
                     <SortableHeader field="status" className="text-left">Status</SortableHeader>
+                    {timePeriod !== 'current_week' && (
+                      <th className="p-3 font-medium text-left">Change Label</th>
+                    )}
                     <SortableHeader field="total_spend" className="text-right">Total Spend</SortableHeader>
                     {timePeriod !== 'current_week' && (
                       <SortableHeader field="spend_delta" className="text-right">Spend Δ</SortableHeader>
@@ -645,6 +649,15 @@ export default function AccountMetricsTable() {
                           {account.status}
                         </Badge>
                       </td>
+                      {timePeriod !== 'current_week' && (
+                        <td className="p-3">
+                          {account.status_label && (
+                            <Badge variant="outline" className="text-xs">
+                              {account.status_label}
+                            </Badge>
+                          )}
+                        </td>
+                      )}
                       <td className="p-3 text-right font-mono text-sm">
                         {formatCurrencyWhole(account.total_spend)}
                       </td>

@@ -15,7 +15,7 @@
     "simulate-day": "node scripts/run-daily-simulation.js",
     "simulate-all": "node etl/run-full-simulation-sqlite.js",
     "simulate-all:prod": "node etl/run-full-simulation.js",
-    "server": "node server.js",
+    "server": "node server-clean.js",
     "server:clean": "node server-clean.js",
     "dev": "concurrently \"npm run server\" \"npm run frontend:dev\"",
     "dev:clean": "concurrently \"npm run server:clean\" \"npm run frontend:dev\"",
