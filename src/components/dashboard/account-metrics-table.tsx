@@ -503,8 +503,8 @@ export default function AccountMetricsTable() {
               <div className="text-sm font-bold text-purple-800 mb-3">Total Spend</div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-600">Current Week</span>
-                  <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(currentWeekStats.totalSpend)}</span>
+                  <span className="text-xs text-gray-600">Filtered Accounts</span>
+                  <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(summaryStats.totalSpend)}</span>
                 </div>
                 {timePeriod !== 'current_week' && (
                   <>
@@ -528,8 +528,8 @@ export default function AccountMetricsTable() {
               <div className="text-sm font-bold text-orange-800 mb-3">Total Texts</div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-600">Current Week</span>
-                  <span className="text-sm font-bold text-orange-600">{currentWeekStats.totalTexts.toLocaleString()}</span>
+                  <span className="text-xs text-gray-600">Filtered Accounts</span>
+                  <span className="text-sm font-bold text-orange-600">{summaryStats.totalTexts.toLocaleString()}</span>
                 </div>
                 {timePeriod !== 'current_week' && (
                   <>
@@ -553,8 +553,8 @@ export default function AccountMetricsTable() {
               <div className="text-sm font-bold text-green-800 mb-3">Total Redemptions</div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-600">Current Week</span>
-                  <span className="text-sm font-bold text-green-600">{currentWeekStats.totalRedemptions.toLocaleString()}</span>
+                  <span className="text-xs text-gray-600">Filtered Accounts</span>
+                  <span className="text-sm font-bold text-green-600">{summaryStats.totalRedemptions.toLocaleString()}</span>
                 </div>
                 {timePeriod !== 'current_week' && (
                   <>
@@ -578,8 +578,8 @@ export default function AccountMetricsTable() {
               <div className="text-sm font-bold text-blue-800 mb-3">Total Subscribers</div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-600">Current Week</span>
-                  <span className="text-sm font-bold text-blue-600">{currentWeekStats.totalSubscribers.toLocaleString()}</span>
+                  <span className="text-xs text-gray-600">Filtered Accounts</span>
+                  <span className="text-sm font-bold text-blue-600">{summaryStats.totalSubscribers.toLocaleString()}</span>
                 </div>
                 {timePeriod !== 'current_week' && (
                   <>

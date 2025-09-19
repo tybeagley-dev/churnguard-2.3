@@ -153,7 +153,21 @@ export default function AccountDetailModal({
       coupons: item.coupons_redeemed,
       subscriptions: item.active_subs_cnt,
       riskLevel: item.risk_level || 'low', // Use database historical_risk_level
-      riskReasons: item.risk_reasons || ['No flags'], // Use database risk_reasons
+      riskReasons: (() => {
+        if (!item.risk_reasons) return ['No flags'];
+        if (Array.isArray(item.risk_reasons)) return item.risk_reasons;
+        if (typeof item.risk_reasons === 'string') {
+          try {
+            const parsed = JSON.parse(item.risk_reasons);
+            return Array.isArray(parsed) ? parsed : [item.risk_reasons];
+          } catch {
+            return item.risk_reasons.includes(',')
+              ? item.risk_reasons.split(',').map(r => r.trim())
+              : [item.risk_reasons];
+          }
+        }
+        return ['No flags'];
+      })(),
       hasRiskFlag: (item.risk_level && item.risk_level !== 'low') || riskData.flagCount > 0,
       flagCount: riskData.flagCount,
       riskFlags: riskData.flags,

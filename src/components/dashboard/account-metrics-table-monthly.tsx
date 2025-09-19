@@ -658,19 +658,19 @@ export default function AccountMetricsTableMonthly() {
             <div className="text-sm font-bold text-purple-800 mb-3">Total Spend</div>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">Current Month</span>
-                <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(baselineMetrics.total_spend)}</span>
+                <span className="text-xs text-gray-600">Filtered Accounts</span>
+                <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(summaryStats.totalSpend)}</span>
               </div>
               {comparisonMetrics && (
                 <>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(comparisonMetrics.total_spend)}</span>
+                    <span className="text-xs text-gray-600">All Accounts</span>
+                    <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(baselineMetrics.total_spend)}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(baselineMetrics.total_spend - comparisonMetrics.total_spend, 'currency')}
+                      {formatDelta(summaryStats.totalSpend - baselineMetrics.total_spend, 'currency')}
                     </div>
                   </div>
                 </>
@@ -683,19 +683,19 @@ export default function AccountMetricsTableMonthly() {
             <div className="text-sm font-bold text-orange-800 mb-3">Total Texts</div>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">Current Month</span>
-                <span className="text-sm font-bold text-orange-600">{baselineMetrics.total_texts.toLocaleString()}</span>
+                <span className="text-xs text-gray-600">Filtered Accounts</span>
+                <span className="text-sm font-bold text-orange-600">{summaryStats.totalTexts.toLocaleString()}</span>
               </div>
               {comparisonMetrics && (
                 <>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{comparisonMetrics.total_texts.toLocaleString()}</span>
+                    <span className="text-xs text-gray-600">All Accounts</span>
+                    <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_texts.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(baselineMetrics.total_texts - comparisonMetrics.total_texts, 'number')}
+                      {formatDelta(summaryStats.totalTexts - baselineMetrics.total_texts, 'number')}
                     </div>
                   </div>
                 </>
@@ -708,19 +708,19 @@ export default function AccountMetricsTableMonthly() {
             <div className="text-sm font-bold text-green-800 mb-3">Total Redemptions</div>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">Current Month</span>
-                <span className="text-sm font-bold text-green-600">{baselineMetrics.total_redemptions.toLocaleString()}</span>
+                <span className="text-xs text-gray-600">Filtered Accounts</span>
+                <span className="text-sm font-bold text-green-600">{summaryStats.totalRedemptions.toLocaleString()}</span>
               </div>
               {comparisonMetrics && (
                 <>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{comparisonMetrics.total_redemptions.toLocaleString()}</span>
+                    <span className="text-xs text-gray-600">All Accounts</span>
+                    <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_redemptions.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(baselineMetrics.total_redemptions - comparisonMetrics.total_redemptions, 'number')}
+                      {formatDelta(summaryStats.totalRedemptions - baselineMetrics.total_redemptions, 'number')}
                     </div>
                   </div>
                 </>
@@ -733,19 +733,19 @@ export default function AccountMetricsTableMonthly() {
             <div className="text-sm font-bold text-blue-800 mb-3">Total Subscribers</div>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">Current Month</span>
-                <span className="text-sm font-bold text-blue-600">{baselineMetrics.total_subscribers.toLocaleString()}</span>
+                <span className="text-xs text-gray-600">Filtered Accounts</span>
+                <span className="text-sm font-bold text-blue-600">{summaryStats.totalSubscribers.toLocaleString()}</span>
               </div>
               {comparisonMetrics && (
                 <>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-600">Comparison</span>
-                    <span className="text-sm font-bold text-gray-600">{comparisonMetrics.total_subscribers.toLocaleString()}</span>
+                    <span className="text-xs text-gray-600">All Accounts</span>
+                    <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_subscribers.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(baselineMetrics.total_subscribers - comparisonMetrics.total_subscribers, 'number')}
+                      {formatDelta(summaryStats.totalSubscribers - baselineMetrics.total_subscribers, 'number')}
                     </div>
                   </div>
                 </>
