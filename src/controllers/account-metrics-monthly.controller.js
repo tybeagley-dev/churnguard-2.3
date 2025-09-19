@@ -13,7 +13,6 @@ export const getAccountMetricsMonthly = async (req, res) => {
       risk_level = null
     } = req.query;
 
-    console.log(`📊 Account Metrics Monthly: baseline=${baseline}, comparison=${comparison}`);
 
     // Always get current month baseline with risk data
     const baselineData = await getCurrentMonthBaselineData();
@@ -45,7 +44,6 @@ export const getAccountMetricsMonthly = async (req, res) => {
       filteredAccounts = accountsWithDeltas.filter(account => {
         return account.trending_risk_level === risk_level;
       });
-      console.log(`🎯 Filtering by risk level: ${risk_level} (${filteredAccounts.length} accounts)`);
     }
 
     const response = {
