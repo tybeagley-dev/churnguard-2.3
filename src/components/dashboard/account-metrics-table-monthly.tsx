@@ -228,6 +228,9 @@ export default function AccountMetricsTableMonthly() {
           highRiskCount: 0,
           medRiskCount: 0,
           lowRiskCount: 0,
+          trendingHighRiskCount: 0,
+          trendingMedRiskCount: 0,
+          trendingLowRiskCount: 0,
           totalSpend: 0,
           totalRedemptions: 0,
           totalTexts: 0,
@@ -359,18 +362,27 @@ export default function AccountMetricsTableMonthly() {
       acc.totalTexts += account.total_texts_delivered || 0;
       acc.totalSubscribers += account.active_subs_cnt || 0;
       
-      // Count risk levels
+      // Count risk levels (current month)
       const riskLevel = account.riskLevel || account.risk_level || 'low';
       if (riskLevel === 'high') acc.highRiskCount += 1;
       else if (riskLevel === 'medium') acc.medRiskCount += 1;
       else acc.lowRiskCount += 1;
-      
+
+      // Count trending risk levels
+      const trendingRiskLevel = account.trending_risk_level || 'low';
+      if (trendingRiskLevel === 'high') acc.trendingHighRiskCount += 1;
+      else if (trendingRiskLevel === 'medium') acc.trendingMedRiskCount += 1;
+      else acc.trendingLowRiskCount += 1;
+
       return acc;
     }, {
       totalAccounts: 0,
       highRiskCount: 0,
       medRiskCount: 0,
       lowRiskCount: 0,
+      trendingHighRiskCount: 0,
+      trendingMedRiskCount: 0,
+      trendingLowRiskCount: 0,
       totalSpend: 0,
       totalRedemptions: 0,
       totalTexts: 0,
@@ -656,14 +668,14 @@ export default function AccountMetricsTableMonthly() {
           {/* Total Spend */}
           <div className="bg-purple-50 p-4 rounded-lg border">
             <div className="text-sm font-bold text-purple-800 mb-3">Total Spend</div>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">Filtered Accounts</span>
+            <div className={`${timePeriod === 'current_month' && !comparisonMetrics ? 'flex items-center min-h-[40px] w-full' : 'space-y-2'}`}>
+              <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
+                <span className="text-xs text-gray-600">{timePeriod === 'current_month' ? 'Current Month' : 'Current Period'}</span>
                 <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(summaryStats.totalSpend)}</span>
               </div>
               {comparisonMetrics && (
                 <>
-                  <div className="flex justify-between items-center">
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">All Accounts</span>
                     <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(baselineMetrics.total_spend)}</span>
                   </div>
@@ -681,14 +693,14 @@ export default function AccountMetricsTableMonthly() {
           {/* Total Texts */}
           <div className="bg-orange-50 p-4 rounded-lg border">
             <div className="text-sm font-bold text-orange-800 mb-3">Total Texts</div>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">Filtered Accounts</span>
+            <div className={`${timePeriod === 'current_month' && !comparisonMetrics ? 'flex items-center min-h-[40px] w-full' : 'space-y-2'}`}>
+              <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
+                <span className="text-xs text-gray-600">{timePeriod === 'current_month' ? 'Current Month' : 'Current Period'}</span>
                 <span className="text-sm font-bold text-orange-600">{summaryStats.totalTexts.toLocaleString()}</span>
               </div>
               {comparisonMetrics && (
                 <>
-                  <div className="flex justify-between items-center">
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">All Accounts</span>
                     <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_texts.toLocaleString()}</span>
                   </div>
@@ -706,14 +718,14 @@ export default function AccountMetricsTableMonthly() {
           {/* Total Redemptions */}
           <div className="bg-green-50 p-4 rounded-lg border">
             <div className="text-sm font-bold text-green-800 mb-3">Total Redemptions</div>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">Filtered Accounts</span>
+            <div className={`${timePeriod === 'current_month' && !comparisonMetrics ? 'flex items-center min-h-[40px] w-full' : 'space-y-2'}`}>
+              <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
+                <span className="text-xs text-gray-600">{timePeriod === 'current_month' ? 'Current Month' : 'Current Period'}</span>
                 <span className="text-sm font-bold text-green-600">{summaryStats.totalRedemptions.toLocaleString()}</span>
               </div>
               {comparisonMetrics && (
                 <>
-                  <div className="flex justify-between items-center">
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">All Accounts</span>
                     <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_redemptions.toLocaleString()}</span>
                   </div>
@@ -731,14 +743,14 @@ export default function AccountMetricsTableMonthly() {
           {/* Total Subscribers */}
           <div className="bg-blue-50 p-4 rounded-lg border">
             <div className="text-sm font-bold text-blue-800 mb-3">Total Subscribers</div>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">Filtered Accounts</span>
+            <div className={`${timePeriod === 'current_month' && !comparisonMetrics ? 'flex items-center min-h-[40px] w-full' : 'space-y-2'}`}>
+              <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
+                <span className="text-xs text-gray-600">{timePeriod === 'current_month' ? 'Current Month' : 'Current Period'}</span>
                 <span className="text-sm font-bold text-blue-600">{summaryStats.totalSubscribers.toLocaleString()}</span>
               </div>
               {comparisonMetrics && (
                 <>
-                  <div className="flex justify-between items-center">
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">All Accounts</span>
                     <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_subscribers.toLocaleString()}</span>
                   </div>
@@ -760,9 +772,13 @@ export default function AccountMetricsTableMonthly() {
               <div className="bg-red-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-red-800 mb-3">High Risk</div>
                 <div className="space-y-2">
-                  <div className="flex justify-between items-center">
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">Current Month</span>
                     <span className="text-sm font-bold text-red-600">{summaryStats.highRiskCount.toLocaleString()}</span>
+                  </div>
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
+                    <span className="text-xs text-gray-600">Trending</span>
+                    <span className="text-sm font-bold text-red-600">{summaryStats.trendingHighRiskCount.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -771,9 +787,13 @@ export default function AccountMetricsTableMonthly() {
               <div className="bg-orange-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-orange-800 mb-3">Medium Risk</div>
                 <div className="space-y-2">
-                  <div className="flex justify-between items-center">
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">Current Month</span>
                     <span className="text-sm font-bold text-orange-600">{summaryStats.medRiskCount.toLocaleString()}</span>
+                  </div>
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
+                    <span className="text-xs text-gray-600">Trending</span>
+                    <span className="text-sm font-bold text-orange-600">{summaryStats.trendingMedRiskCount.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -782,9 +802,13 @@ export default function AccountMetricsTableMonthly() {
               <div className="bg-green-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-green-800 mb-3">Low Risk</div>
                 <div className="space-y-2">
-                  <div className="flex justify-between items-center">
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">Current Month</span>
                     <span className="text-sm font-bold text-green-600">{summaryStats.lowRiskCount.toLocaleString()}</span>
+                  </div>
+                  <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
+                    <span className="text-xs text-gray-600">Trending</span>
+                    <span className="text-sm font-bold text-green-600">{summaryStats.trendingLowRiskCount.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
