@@ -125,6 +125,12 @@ export default function AccountDetailModal({
     return { riskLevel, flags, flagCount };
   };
 
+  // Determine current month (format: YYYY-MM)
+  const currentMonth = new Date().toISOString().slice(0, 7); // "2025-09"
+
+  // Check if we have current month data for dotted lines
+  const hasCurrentMonthData = monthlyData?.some(item => item.month_yr === currentMonth) || false;
+
   const chartData = monthlyData?.map((item: MonthlyMetric, index: number) => {
     const previousMonth = index > 0 ? monthlyData[index - 1] : undefined;
 
@@ -138,6 +144,7 @@ export default function AccountDetailModal({
     const monthsSinceFirstActivity = firstActiveMonthIndex >= 0 ? index - firstActiveMonthIndex + 1 : 0;
 
     const riskData = calculateRiskForMonth(item, previousMonth, monthsSinceFirstActivity);
+    const isCurrentMonth = item.month_yr === currentMonth;
 
     return {
       month: item.month_label,
@@ -150,9 +157,11 @@ export default function AccountDetailModal({
       hasRiskFlag: (item.risk_level && item.risk_level !== 'low') || riskData.flagCount > 0,
       flagCount: riskData.flagCount,
       riskFlags: riskData.flags,
-      monthIndex: index // Add index for ReferenceArea positioning
+      monthIndex: index, // Add index for ReferenceArea positioning
+      isCurrentMonth: isCurrentMonth // Flag for visual distinction
     };
-  }) || [];
+  }).reverse() || []; // Reverse to show oldest → newest (left to right)
+
 
   // Helper function to get risk color (matching the legend squares)
   const getRiskColor = (riskLevel: string) => {
@@ -167,13 +176,13 @@ export default function AccountDetailModal({
     }
   };
 
-  // Calculate summary metrics from latest month
-  const latestMonth = monthlyData?.[monthlyData.length - 1];
-  const summaryMetrics = latestMonth ? {
-    spend: latestMonth.total_spend,
-    texts: latestMonth.total_texts_delivered,
-    coupons: latestMonth.coupons_redeemed,
-    subscriptions: latestMonth.active_subs_cnt
+  // Calculate summary metrics from current month (first item since data comes DESC from DB)
+  const currentMonthData = monthlyData?.[0]; // First item is newest month from ORDER BY month DESC
+  const summaryMetrics = currentMonthData ? {
+    spend: currentMonthData.total_spend,
+    texts: currentMonthData.total_texts_delivered,
+    coupons: currentMonthData.coupons_redeemed,
+    subscriptions: currentMonthData.active_subs_cnt
   } : { spend: 0, texts: 0, coupons: 0, subscriptions: 0 };
 
   return (
@@ -401,16 +410,43 @@ export default function AccountDetailModal({
                         const x1 = currentMonth;
                         const x2 = nextMonth || currentMonth;
 
+                        const fillColor = getRiskColor(dataPoint.riskLevel);
+
                         return (
                           <ReferenceArea
                             key={`risk-bg-${index}`}
                             x1={x1}
                             x2={x2}
-                            fill={getRiskColor(dataPoint.riskLevel)}
+                            fill={fillColor}
                             fillOpacity={1}
                           />
                         );
                       })}
+
+                      {/* Double line boundary between completed months and current month */}
+                      {(() => {
+                        const currentMonthIndex = chartData.findIndex(d => d.isCurrentMonth);
+                        if (currentMonthIndex > 0) {
+                          const lastCompletedMonth = chartData[currentMonthIndex - 1].month;
+                          return (
+                            <>
+                              <ReferenceLine
+                                x={lastCompletedMonth}
+                                stroke="#374151"
+                                strokeWidth={3}
+                                strokeDasharray="none"
+                              />
+                              <ReferenceLine
+                                x={lastCompletedMonth}
+                                stroke="#6b7280"
+                                strokeWidth={1}
+                                strokeDasharray="5 5"
+                              />
+                            </>
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {visibleMetrics.spend && (
                         <Line
@@ -479,9 +515,11 @@ export default function AccountDetailModal({
                       </tr>
                     </thead>
                     <tbody>
-                      {monthlyData?.slice().reverse().map((month: MonthlyMetric, index: number) => (
+                      {monthlyData?.map((month: MonthlyMetric, index: number) => (
                         <tr key={month.month_yr} className="border-b hover:bg-gray-50">
-                          <td className="py-3 px-4 font-medium">{month.month_label}</td>
+                          <td className="py-3 px-4 font-medium">
+                            {month.month_yr === currentMonth ? `${month.month_label} (MTD)` : month.month_label}
+                          </td>
                           <td className="text-right py-3 px-4">{formatCurrency(month.total_spend)}</td>
                           <td className="text-right py-3 px-4">{formatNumber(month.total_texts_delivered)}</td>
                           <td className="text-right py-3 px-4">{formatNumber(month.coupons_redeemed)}</td>

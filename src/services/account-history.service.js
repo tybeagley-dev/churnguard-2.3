@@ -1,6 +1,31 @@
 import { getSharedDatabase } from '../../config/database.js';
 import { ChurnGuardCalendar } from '../utils/calendar.js';
 
+export const getAccountHistoryMonthly = async (accountId) => {
+  const db = await getSharedDatabase();
+
+  console.log(`📈 Account History - Fetching monthly data for account: ${accountId}`);
+
+  // Get the last 13 months of data for the account from monthly_metrics (12 complete + current)
+  const monthlyData = await db.all(`
+    SELECT
+      month as month_yr,
+      month_label,
+      total_spend,
+      total_texts_delivered,
+      total_coupons_redeemed as coupons_redeemed,
+      ROUND(avg_active_subs_cnt) as active_subs_cnt,
+      historical_risk_level as risk_level,
+      risk_reasons
+    FROM monthly_metrics
+    WHERE account_id = ?
+    ORDER BY month DESC
+    LIMIT 13
+  `, accountId);
+
+  return monthlyData || [];
+};
+
 export const getAccountHistory = async (accountId) => {
   const db = await getSharedDatabase();
 

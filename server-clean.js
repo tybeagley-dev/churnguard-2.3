@@ -10,6 +10,7 @@ import accountMetricsOverviewRoutes from './src/routes/account-metrics-overview.
 import accountHistoryRoutes from './src/routes/account-history.routes.js';
 import accountsRoutes from './src/routes/accounts.routes.js';
 import authRoutes from './src/routes/auth.routes.js';
+import hubspotRoutes from './src/routes/hubspot.routes.js';
 
 const app = express();
 const port = process.env.PORT || 3003;
@@ -50,6 +51,7 @@ app.use('/api', accountMetricsOverviewRoutes);
 app.use('/api', accountHistoryRoutes);
 app.use('/api', accountsRoutes);
 app.use('/api', authRoutes);
+app.use('/api/hubspot', hubspotRoutes);
 
 // Serve frontend for all other routes
 app.get('*', (req, res) => {

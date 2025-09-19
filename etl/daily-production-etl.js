@@ -3,7 +3,8 @@ import { DailyTextsETLSQLite } from './daily-texts-etl-sqlite.js';
 import { DailyCouponsETLSQLite } from './daily-coupons-etl-sqlite.js';
 import { DailySubsETLSQLite } from './daily-subs-etl-sqlite.js';
 import { AccountsETLSQLite } from './accounts-etl-sqlite.js';
-import { HistoricalRiskPopulator } from '../populate-historical-risk-levels.js';
+import { HistoricalRiskPopulator } from './populate-historical-risk-levels.js';
+import { HubSpotSyncService } from '../src/services/hubspot-sync.js';
 import { BigQuery } from '@google-cloud/bigquery';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
@@ -19,6 +20,7 @@ export class DailyProductionETL {
     this.couponsETL = new DailyCouponsETLSQLite();
     this.subsETL = new DailySubsETLSQLite();
     this.accountsETL = new AccountsETLSQLite();
+    this.hubspotSync = new HubSpotSyncService();
     this.bigquery = new BigQuery({
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
       keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
@@ -97,7 +99,21 @@ export class DailyProductionETL {
       // Step 5: Update account summary metrics
       console.log('\n🔄 Step 5: Update account summary metrics');
       await this.updateAccountSummaryMetrics();
-      
+
+      // Step 6: Sync to HubSpot (if API key is configured)
+      let hubspotResults = null;
+      if (process.env.HUBSPOT_API_KEY) {
+        console.log('\n📤 Step 6: Sync risk data to HubSpot');
+        try {
+          hubspotResults = await this.hubspotSync.syncAccountsToHubSpot(processDate, 'daily');
+        } catch (error) {
+          console.warn(`⚠️  HubSpot sync failed (continuing ETL): ${error.message}`);
+          hubspotResults = { success: false, error: error.message };
+        }
+      } else {
+        console.log('\n⏭️  Step 6: Skipping HubSpot sync (HUBSPOT_API_KEY not configured)');
+      }
+
       const endTime = Date.now();
       const duration = ((endTime - startTime) / 1000).toFixed(2);
       
@@ -110,7 +126,10 @@ export class DailyProductionETL {
       console.log(`📊 Processed ${extractResults.totalAccounts} accounts`);
       console.log(`📈 Updated ${monthlyResults.monthsUpdated} monthly records`);
       console.log(`🎯 Recalculated ${riskResults.accountsUpdated} trending risk levels`);
-      
+      if (hubspotResults && hubspotResults.success) {
+        console.log(`📤 HubSpot sync: ${hubspotResults.successfulSyncs}/${hubspotResults.totalAccounts} accounts synced`);
+      }
+
       return {
         success: true,
         processDate,
@@ -119,7 +138,8 @@ export class DailyProductionETL {
         accountsResults,
         extractResults,
         monthlyResults,
-        riskResults
+        riskResults,
+        hubspotResults
       };
       
     } catch (error) {

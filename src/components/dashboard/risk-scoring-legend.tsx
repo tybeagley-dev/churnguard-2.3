@@ -74,21 +74,21 @@ export default function RiskScoringLegend() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-4 bg-red-50 rounded-lg border border-red-200">
-              <Badge variant="destructive" className="mb-2">HIGH RISK</Badge>
-              <p className="text-sm text-gray-700">3-4 risk flags active OR Account Frozen and 1+ months since last text</p>
-              <p className="text-xs text-gray-500 mt-1">Immediate attention required</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="text-center p-6 bg-red-50 rounded-lg border border-red-200">
+              <Badge variant="destructive" className="mb-3 px-3 py-1">HIGH RISK</Badge>
+              <p className="text-sm text-gray-800 font-medium mb-2">3+ risk flags active OR Account Frozen and 1+ months since last text OR Account Archived</p>
+              <p className="text-xs text-gray-600">Immediate attention required</p>
             </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <Badge variant="secondary" className="mb-2">MEDIUM RISK</Badge>
-              <p className="text-sm text-gray-700">1-2 risk flags active OR Account Frozen</p>
-              <p className="text-xs text-gray-500 mt-1">Monitor closely</p>
+            <div className="text-center p-6 bg-orange-50 rounded-lg border border-orange-200">
+              <Badge className="mb-3 px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white">MEDIUM RISK</Badge>
+              <p className="text-sm text-gray-800 font-medium mb-2">1-2 risk flags active OR Account Frozen</p>
+              <p className="text-xs text-gray-600">Monitor closely</p>
             </div>
-            <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-              <Badge variant="outline" className="mb-2 text-green-700 border-green-700">LOW RISK</Badge>
-              <p className="text-sm text-gray-700">0 risk flags active</p>
-              <p className="text-xs text-gray-500 mt-1">Healthy account</p>
+            <div className="text-center p-6 bg-green-50 rounded-lg border border-green-200">
+              <Badge className="mb-3 px-3 py-1 bg-green-600 hover:bg-green-700 text-white">LOW RISK</Badge>
+              <p className="text-sm text-gray-800 font-medium mb-2">0 risk flags active</p>
+              <p className="text-xs text-gray-600">Healthy account</p>
             </div>
           </div>
         </CardContent>
@@ -112,15 +112,23 @@ export default function RiskScoringLegend() {
                 </div>
                 <p className="text-sm text-gray-600">Less than 10 redemptions in the current month</p>
               </div>
-              
+
               <div className="border-l-4 border-orange-500 pl-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Users className="h-4 w-4 text-orange-500" />
                   <h4 className="font-semibold text-orange-700">Low Activity</h4>
                 </div>
-                <p className="text-sm text-gray-600">Less than 5 subscribers per location</p>
+                <p className="text-sm text-gray-600">Less than 150 subscribers per location</p>
               </div>
-              
+
+              <div className="border-l-4 border-yellow-500 pl-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Target className="h-4 w-4 text-yellow-600" />
+                  <h4 className="font-semibold text-yellow-700">Low Engagement Combo</h4>
+                </div>
+                <p className="text-sm text-gray-600">Less than 300 subscribers AND less than 35 redemptions (worth 2 points)</p>
+              </div>
+
               <div className="border-l-4 border-gray-500 pl-4">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertTriangle className="h-4 w-4 text-gray-600" />
@@ -129,16 +137,16 @@ export default function RiskScoringLegend() {
                 <p className="text-sm text-gray-600">Account is Frozen</p>
               </div>
             </div>
-            
+
             <div className="space-y-4">
               <div className="border-l-4 border-purple-500 pl-4">
                 <div className="flex items-center gap-2 mb-1">
                   <DollarSign className="h-4 w-4 text-purple-500" />
                   <h4 className="font-semibold text-purple-700">Spend Drop</h4>
                 </div>
-                <p className="text-sm text-gray-600">Current spend is 50%+ lower than previous month</p>
+                <p className="text-sm text-gray-600">Current spend is 40%+ lower than previous month</p>
               </div>
-              
+
               <div className="border-l-4 border-blue-500 pl-4">
                 <div className="flex items-center gap-2 mb-1">
                   <TrendingDown className="h-4 w-4 text-blue-500" />
@@ -146,13 +154,21 @@ export default function RiskScoringLegend() {
                 </div>
                 <p className="text-sm text-gray-600">Current redemptions are 50%+ lower than previous month</p>
               </div>
-              
+
               <div className="border-l-4 border-red-500 pl-4">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertTriangle className="h-4 w-4 text-red-600" />
                   <h4 className="font-semibold text-red-700">Frozen & Inactive</h4>
                 </div>
                 <p className="text-sm text-gray-600">Account is Frozen and 1+ month since last text</p>
+              </div>
+
+              <div className="border-l-4 border-black pl-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="h-4 w-4 text-black" />
+                  <h4 className="font-semibold text-black">Recently Archived</h4>
+                </div>
+                <p className="text-sm text-gray-600">Account has been archived (churned customer)</p>
               </div>
             </div>
           </div>
@@ -168,33 +184,44 @@ export default function RiskScoringLegend() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Combined Calculation Processes - Spans 2 Columns */}
-            <div className="md:col-span-2">
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Combined Calculation Processes - Spans 3 Columns */}
+            <div className="md:col-span-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
-                    <h4 className="font-semibold mb-3 text-indigo-800">Calculation Process—Launched Accounts</h4>
+                    <h4 className="font-semibold mb-3 text-blue-800">Calculation Process—Launched Accounts</h4>
                     <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
-                      <li>Evaluate each account against all four risk flags</li>
-                      <li>Count the number of active flags (0-4)</li>
-                      <li>Assign risk level based on flag count</li>
-                      <li>Update risk scores in real-time with new data</li>
+                      <li>Evaluate each account against all possible flags</li>
+                      <li>Count the number of active flags</li>
+                      <li>Assign risk level based on flag count and account status</li>
+                      <li>Update current data at months' end based on prior months' data</li>
+                      <li>Update trending data in real-time with new data</li>
                     </ol>
                   </div>
                   <div>
-                    <h4 className="font-semibold mb-3 text-indigo-800">Calculation Process—Frozen Accounts</h4>
+                    <h4 className="font-semibold mb-3 text-blue-800">Calculation Process—Frozen Accounts</h4>
                     <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
                       <li>Check account frozen status</li>
                       <li>Evaluate last text sent date</li>
                       <li>Assign Medium (frozen) or High (frozen + 1+ month inactive)</li>
-                      <li>Update risk scores in real-time with new data</li>
+                      <li>Update current data at months' end based on prior months' data</li>
+                      <li>Update trending data in real-time with new data</li>
+                    </ol>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-3 text-blue-800">Calculation Process—Archived Accounts</h4>
+                    <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
+                      <li>Preserve pre-archival risk calculation for current risk</li>
+                      <li>Assign High trending risk level automatically</li>
+                      <li>Display "Recently Archived" as trending risk reason</li>
+                      <li>Update data at months' end based on archival date</li>
                     </ol>
                   </div>
                 </div>
               </div>
             </div>
-            
+
             {/* Data Sources Column */}
             <div>
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
@@ -209,10 +236,10 @@ export default function RiskScoringLegend() {
               </div>
             </div>
           </div>
-            
+
           <div className="mt-6 pt-4 border-t">
             <h4 className="font-semibold mb-3">Important Notes</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm text-gray-600">
               <div className="bg-blue-50 p-3 rounded border border-blue-200">
                 <strong className="text-blue-800">New Accounts:</strong> Only Monthly Redemptions and Low Activity flags are available for accounts in their first two months.
               </div>
@@ -221,6 +248,9 @@ export default function RiskScoringLegend() {
               </div>
               <div className="bg-purple-50 p-3 rounded border border-purple-200">
                 <strong className="text-purple-800">Frozen Status:</strong> Accounts with a Frozen status are assigned a risk level independently of other performance flags and can apply to both New and Established Accounts.
+              </div>
+              <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                <strong className="text-gray-800">Archived Status:</strong> Accounts with an Archived status are automatically assigned High trending risk and preserve their pre-archival current risk calculation.
               </div>
             </div>
           </div>
