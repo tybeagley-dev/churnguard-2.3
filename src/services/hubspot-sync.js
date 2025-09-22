@@ -1,19 +1,14 @@
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { getSharedDatabase } from '../../config/database.js';
 import { createHubSpotService, formatRiskDataForHubSpot } from './hubspot.js';
 import { hubspotIdTranslator } from './hubspot-id-translator.js';
 
 export class HubSpotSyncService {
   constructor() {
-    this.dbPath = process.env.SQLITE_DB_PATH || './data/churnguard_simulation.db';
+    // No longer need database path configuration for PostgreSQL
   }
 
   async getDatabase() {
-    const db = await open({
-      filename: this.dbPath,
-      driver: sqlite3.Database
-    });
-    return db;
+    return await getSharedDatabase();
   }
 
   async syncAccountsToHubSpot(targetDate = null, syncMode = 'daily') {
@@ -35,7 +30,7 @@ export class HubSpotSyncService {
       // Get month end date for eligibility criteria
       const monthEnd = this.getMonthEnd(currentMonth);
 
-      const accounts = await db.all(`
+      const result = await db.query(`
         SELECT
           a.account_id,
           a.account_name,
@@ -53,18 +48,19 @@ export class HubSpotSyncService {
           mm_current.total_coupons_redeemed,
           mm_current.avg_active_subs_cnt
         FROM accounts a
-        LEFT JOIN monthly_metrics mm_current ON a.account_id = mm_current.account_id AND mm_current.month = ?
-        LEFT JOIN monthly_metrics mm_previous ON a.account_id = mm_previous.account_id AND mm_previous.month = ?
+        LEFT JOIN monthly_metrics mm_current ON a.account_id = mm_current.account_id AND mm_current.month = $1
+        LEFT JOIN monthly_metrics mm_previous ON a.account_id = mm_previous.account_id AND mm_previous.month = $2
         WHERE a.hubspot_id IS NOT NULL
           AND a.hubspot_id != ''
           AND a.hubspot_id != 'null'
           AND a.launched_at IS NOT NULL
-          AND a.launched_at <= ? || ' 23:59:59'
+          AND a.launched_at <= $3 || ' 23:59:59'
           AND (
             COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-            OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= ? || '-01'
+            OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= $4 || '-01'
           )
       `, [currentMonth, previousMonth, monthEnd, currentMonth]);
+      const accounts = result.rows;
 
       console.log(`📊 Found ${accounts.length} accounts with HubSpot IDs to sync`);
 
@@ -113,7 +109,7 @@ export class HubSpotSyncService {
 
       // Note: Ineligible account sync removed - going forward only eligible accounts will be synced
 
-      await db.close();
+      // PostgreSQL connection will be returned to pool automatically
 
       return {
         success: true,
@@ -127,7 +123,7 @@ export class HubSpotSyncService {
       };
 
     } catch (error) {
-      await db.close();
+      // PostgreSQL connection will be returned to pool automatically
       console.error(`❌ HubSpot sync failed:`, error);
       throw error;
     }
@@ -208,7 +204,7 @@ export class HubSpotSyncService {
 
     try {
       // Get accounts with HubSpot IDs that DON'T meet eligibility criteria
-      const ineligibleAccounts = await db.all(`
+      const result = await db.query(`
         SELECT
           a.account_id,
           a.account_name,
@@ -223,18 +219,19 @@ export class HubSpotSyncService {
           AND a.hubspot_id != 'null'
           AND NOT (
             a.launched_at IS NOT NULL
-            AND a.launched_at <= ? || ' 23:59:59'
+            AND a.launched_at <= $1 || ' 23:59:59'
             AND (
               COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-              OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= ? || '-01'
+              OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= $2 || '-01'
             )
           )
       `, [monthEnd, currentMonth]);
+      const ineligibleAccounts = result.rows;
 
       console.log(`📊 Found ${ineligibleAccounts.length} ineligible accounts to mark with yesterday's date`);
 
       if (ineligibleAccounts.length === 0) {
-        await db.close();
+        // PostgreSQL connection will be returned to pool automatically
         return { totalIneligible: 0, successfulSyncs: 0, failedSyncs: 0 };
       }
 
@@ -276,7 +273,7 @@ export class HubSpotSyncService {
       console.log(`   - Successful syncs: ${syncResult.successfulSyncs}`);
       console.log(`   - Failed syncs: ${syncResult.failedSyncs}`);
 
-      await db.close();
+      // PostgreSQL connection will be returned to pool automatically
 
       return {
         totalIneligible: syncResult.totalAccounts,
@@ -286,7 +283,7 @@ export class HubSpotSyncService {
       };
 
     } catch (error) {
-      await db.close();
+      // PostgreSQL connection will be returned to pool automatically
       console.error(`❌ Ineligible accounts sync failed:`, error);
       throw error;
     }

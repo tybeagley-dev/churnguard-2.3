@@ -14,22 +14,23 @@ export const getHistoricalPerformanceData = async () => {
       SUM(mm.total_texts_delivered) as total_texts_sent
     FROM monthly_metrics mm
     INNER JOIN accounts a ON mm.account_id = a.account_id
-    WHERE mm.month >= strftime('%Y-%m', 'now', '-12 months')
-    AND mm.month < strftime('%Y-%m', 'now')
+    WHERE mm.month >= TO_CHAR(CURRENT_DATE - INTERVAL '12 months', 'YYYY-MM')
+    AND mm.month < TO_CHAR(CURRENT_DATE, 'YYYY-MM')
     AND (
       -- Account eligibility: launched by month-end, not archived before month-start
       a.launched_at IS NOT NULL
-      AND a.launched_at < datetime(date(mm.month || '-01'), '+1 month')
+      AND a.launched_at < (mm.month || '-01')::date + INTERVAL '1 month'
       AND (
         COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-        OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= date(mm.month || '-01')
+        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= (mm.month || '-01')::date
       )
     )
     GROUP BY mm.month, mm.month_label
     ORDER BY mm.month ASC
   `;
 
-  const results = await db.all(query);
+  const result = await db.query(query);
+  const results = result.rows;
 
   // Transform month labels to abbreviated format (Jan 2025, Feb 2025, etc.)
   return results.map(row => ({

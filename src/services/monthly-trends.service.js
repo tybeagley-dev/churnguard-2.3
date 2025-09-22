@@ -18,19 +18,20 @@ export const getMonthlyTrendsData = async () => {
     WHERE (
       -- Account eligibility: launched by month-end, not archived before month-start
       a.launched_at IS NOT NULL
-      AND a.launched_at < datetime(date(mm.month || '-01'), '+1 month')
+      AND a.launched_at < (mm.month || '-01')::date + INTERVAL '1 month'
       AND (
         COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-        OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= date(mm.month || '-01')
+        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= (mm.month || '-01')::date
       )
     )
-    AND mm.month >= strftime('%Y-%m', 'now', '-12 months')
-    AND mm.month <= strftime('%Y-%m', 'now')
+    AND mm.month >= TO_CHAR(CURRENT_DATE - INTERVAL '12 months', 'YYYY-MM')
+    AND mm.month <= TO_CHAR(CURRENT_DATE, 'YYYY-MM')
     GROUP BY mm.month
     ORDER BY mm.month ASC
   `;
 
-  const results = await db.all(query);
+  const result = await db.query(query);
+  const results = result.rows;
   const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
 
   // Transform data with month labels and current month indicator

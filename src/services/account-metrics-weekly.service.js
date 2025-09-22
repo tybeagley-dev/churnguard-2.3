@@ -9,7 +9,7 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
 
   console.log(`📊 Account Metrics Overview - ${label}: ${weekStart} to ${weekEnd} (eligibility: ${effectiveEligibilityMonth})`);
 
-  const accounts = await db.all(`
+  const result = await db.query(`
     SELECT
       a.account_id,
       a.account_name,
@@ -25,7 +25,7 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
 
     FROM accounts a
     INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id
-      AND mm.month = ?
+      AND mm.month = $1
       AND COALESCE(mm.trending_risk_level, mm.historical_risk_level) IS NOT NULL
     LEFT JOIN (
       SELECT
@@ -35,19 +35,20 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
         SUM(total_spend) as total_spend,
         SUM(total_texts_delivered) as total_texts_delivered
       FROM daily_metrics
-      WHERE date >= ? AND date <= ?
+      WHERE date >= $2 AND date <= $3
       GROUP BY account_id
     ) period_data ON a.account_id = period_data.account_id
     WHERE (
       -- Account eligibility: launched by eligibility period-end, not archived before eligibility period-start
-      DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+      a.launched_at::date <= ($4 || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day'
       AND (
         (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-        OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(? || '-01')
+        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($5 || '-01')::date
       )
     )
     ORDER BY a.account_name ASC
-  `, month, weekStart, weekEnd, effectiveEligibilityMonth, effectiveEligibilityMonth);
+  `, [month, weekStart, weekEnd, effectiveEligibilityMonth, effectiveEligibilityMonth]);
+  const accounts = result.rows;
 
   // Calculate aggregated totals for upper portion (summary cards)
   const totals = accounts.reduce((acc, account) => {

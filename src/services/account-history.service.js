@@ -7,7 +7,7 @@ export const getAccountHistoryMonthly = async (accountId) => {
   console.log(`📈 Account History - Fetching monthly data for account: ${accountId}`);
 
   // Get the last 13 months of data for the account from monthly_metrics (12 complete + current)
-  const monthlyData = await db.all(`
+  const result = await db.query(`
     SELECT
       month as month_yr,
       month_label,
@@ -18,10 +18,11 @@ export const getAccountHistoryMonthly = async (accountId) => {
       historical_risk_level as risk_level,
       risk_reasons
     FROM monthly_metrics
-    WHERE account_id = ?
+    WHERE account_id = $1
     ORDER BY month DESC
     LIMIT 13
-  `, accountId);
+  `, [accountId]);
+  const monthlyData = result.rows;
 
   return monthlyData || [];
 };
@@ -51,17 +52,18 @@ export const getAccountHistory = async (accountId) => {
     const weekEndISO = ChurnGuardCalendar.formatDateISO(weekEnd);
 
     // Get weekly aggregated data
-    const weekData = await db.get(`
+    const weekResult = await db.query(`
       SELECT
         SUM(total_spend) as total_spend,
         SUM(total_texts_delivered) as total_texts_delivered,
         SUM(coupons_redeemed) as coupons_redeemed,
         AVG(active_subs_cnt) as active_subs_cnt
       FROM daily_metrics
-      WHERE account_id = ?
-        AND date >= ?
-        AND date <= ?
-    `, accountId, weekStartISO, weekEndISO);
+      WHERE account_id = $1
+        AND date >= $2
+        AND date <= $3
+    `, [accountId, weekStartISO, weekEndISO]);
+    const weekData = weekResult.rows[0];
 
     // Get ISO week number for labeling
     const year = weekStart.getFullYear();

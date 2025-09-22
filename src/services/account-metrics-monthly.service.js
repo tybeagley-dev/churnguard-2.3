@@ -6,7 +6,7 @@ const getAccountMetricsDataForMonthlyPeriod = async (startDate, endDate, eligibi
 
   console.log(`📊 Account Metrics Monthly - ${label}: ${startDate} to ${endDate} (eligibility: ${eligibilityMonth})`);
 
-  const accounts = await db.all(`
+  const result = await db.query(`
     SELECT
       a.account_id,
       a.account_name,
@@ -22,21 +22,22 @@ const getAccountMetricsDataForMonthlyPeriod = async (startDate, endDate, eligibi
 
     FROM accounts a
     INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id
-      AND mm.month = ?
+      AND mm.month = $1
       AND COALESCE(mm.trending_risk_level, mm.historical_risk_level) IS NOT NULL
     LEFT JOIN daily_metrics dm ON a.account_id = dm.account_id
-      AND dm.date >= ? AND dm.date <= ?
+      AND dm.date >= $2 AND dm.date <= $3
     WHERE (
       -- Account eligibility: launched by eligibility period-end, not archived before eligibility period-start
-      DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+      a.launched_at::date <= (($4 || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')
       AND (
         (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-        OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(? || '-01')
+        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($5 || '-01')::date
       )
     )
     GROUP BY a.account_id, a.account_name, a.status, a.csm_owner, a.launched_at
     ORDER BY a.account_name ASC
-  `, eligibilityMonth, startDate, endDate, eligibilityMonth, eligibilityMonth);
+  `, [eligibilityMonth, startDate, endDate, eligibilityMonth, eligibilityMonth]);
+  const accounts = result.rows;
 
   // Calculate aggregated totals for summary cards
   const totals = accounts.reduce((acc, account) => {
@@ -89,7 +90,7 @@ export const getCurrentMonthBaselineData = async () => {
   const prevMonthStr = prevMonth.toISOString().slice(0, 7);
 
   // Get accounts with monthly_metrics data (current MTD from ETL)
-  const accounts = await db.all(`
+  const result = await db.query(`
     SELECT
       a.account_id,
       a.account_name,
@@ -113,20 +114,21 @@ export const getCurrentMonthBaselineData = async () => {
 
     FROM accounts a
     INNER JOIN monthly_metrics cm ON a.account_id = cm.account_id
-      AND cm.month = ?
+      AND cm.month = $1
       AND cm.trending_risk_level IS NOT NULL
     LEFT JOIN monthly_metrics pm ON a.account_id = pm.account_id
-      AND pm.month = ?
+      AND pm.month = $2
     WHERE (
       -- Account eligibility
-      DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+      a.launched_at::date <= (($3 || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')
       AND (
         (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-        OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(? || '-01')
+        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($4 || '-01')::date
       )
     )
     ORDER BY a.account_name ASC
-  `, currentMonth, prevMonthStr, currentMonth, currentMonth);
+  `, [currentMonth, prevMonthStr, currentMonth, currentMonth]);
+  const accounts = result.rows;
 
   // Calculate aggregated totals
   const totals = accounts.reduce((acc, account) => {
@@ -310,7 +312,7 @@ export const getRiskLevelCounts = async () => {
   const prevMonthStr = prevMonth.toISOString().slice(0, 7);
 
   // Get risk level counts for eligible accounts
-  const counts = await db.all(`
+  const countsResult = await db.query(`
     SELECT
       -- Current month trending risk counts
       SUM(CASE WHEN mm.trending_risk_level = 'high' THEN 1 ELSE 0 END) as trending_high,
@@ -324,35 +326,36 @@ export const getRiskLevelCounts = async () => {
 
     FROM accounts a
     INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id
-      AND mm.month = ?
+      AND mm.month = $1
       AND mm.trending_risk_level IS NOT NULL
     LEFT JOIN monthly_metrics pm ON a.account_id = pm.account_id
-      AND pm.month = ?
+      AND pm.month = $2
     WHERE (
       -- Account eligibility for current month
-      DATE(a.launched_at) <= DATE(? || '-01', '+1 month', '-1 day')
+      a.launched_at::date <= (($3 || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')
       AND (
         (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-        OR DATE(COALESCE(a.archived_at, a.earliest_unit_archived_at)) >= DATE(? || '-01')
+        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($4 || '-01')::date
       )
     )
-  `, currentMonth, prevMonthStr, currentMonth, currentMonth);
+  `, [currentMonth, prevMonthStr, currentMonth, currentMonth]);
+  const counts = countsResult.rows;
 
-  const result = counts[0] || {
+  const countsData = counts[0] || {
     trending_high: 0, trending_medium: 0, trending_low: 0,
     historical_high: 0, historical_medium: 0, historical_low: 0
   };
 
   return {
     trending: {
-      high: result.trending_high,
-      medium: result.trending_medium,
-      low: result.trending_low
+      high: countsData.trending_high,
+      medium: countsData.trending_medium,
+      low: countsData.trending_low
     },
     historical: {
-      high: result.historical_high,
-      medium: result.historical_medium,
-      low: result.historical_low
+      high: countsData.historical_high,
+      medium: countsData.historical_medium,
+      low: countsData.historical_low
     }
   };
 };
