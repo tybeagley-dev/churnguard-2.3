@@ -33,7 +33,11 @@ app.use('/api', (req, res, next) => {
 let db;
 try {
   db = await getSharedDatabase();
-  console.log('📊 Connected to SQLite simulation database');
+  if (process.env.DATABASE_URL) {
+    console.log('📊 Connected to PostgreSQL production database');
+  } else {
+    console.log('📊 Connected to SQLite simulation database');
+  }
 } catch (error) {
   console.error('❌ Database connection failed:', error);
   process.exit(1);
@@ -61,7 +65,11 @@ app.get('*', (req, res) => {
 // Start server
 app.listen(port, () => {
   console.log(`🚀 ChurnGuard 2.3 (Clean Architecture) running at http://localhost:${port}`);
-  console.log('📊 Serving data from SQLite simulation database');
+  if (process.env.DATABASE_URL) {
+    console.log('📊 Serving data from PostgreSQL production database');
+  } else {
+    console.log('📊 Serving data from SQLite simulation database');
+  }
   console.log('🎯 Clean, organized, production-ready!');
 });
 

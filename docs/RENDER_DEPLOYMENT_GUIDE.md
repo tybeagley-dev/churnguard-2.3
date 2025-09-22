@@ -91,9 +91,9 @@ GOOGLE_APPLICATION_CREDENTIALS_JSON={"type":"service_account",...}
 NODE_ENV=production
 PORT=10000
 
-# Simulation Configuration (for historical data)
-SIMULATION_START_DATE=2025-07-01
-SIMULATION_END_DATE=2025-09-03
+# BigQuery Data Retrieval Configuration (365 days historical + current)
+RETRIEVAL_START_DATE=2024-09-01
+RETRIEVAL_END_DATE=2025-09-21
 
 # Optional: HubSpot Integration
 HUBSPOT_API_KEY=your-hubspot-api-key-here
@@ -164,8 +164,8 @@ In your web service settings → **Environment** tab:
 | `GOOGLE_APPLICATION_CREDENTIALS_JSON` | `{"type":"service_account",...}` | Full JSON as single line |
 | `NODE_ENV` | `production` | Required |
 | `PORT` | `10000` | Render default |
-| `SIMULATION_START_DATE` | `2025-07-01` | For data simulation |
-| `SIMULATION_END_DATE` | `2025-09-03` | For data simulation |
+| `RETRIEVAL_START_DATE` | `2024-09-01` | 365 days historical data |
+| `RETRIEVAL_END_DATE` | `2025-09-21` | Current latest data |
 
 ### Step 5.2: Optional Variables
 Add these if you have them configured:
@@ -189,7 +189,7 @@ Add these if you have them configured:
 2. Run database initialization:
    ```bash
    # Install PostgreSQL client tools
-   npm run simulate-all:prod
+   npm run bigquery-sync:prod
    ```
 
 **Option B: Local Connection**
@@ -198,8 +198,8 @@ If you have the database URL, you can run locally:
 # Set environment variable locally
 export DATABASE_URL="your-postgresql-url"
 
-# Run production simulation
-npm run simulate-all:prod
+# Run production BigQuery data retrieval
+npm run bigquery-sync:prod
 ```
 
 ### Step 6.3: Verify Database Population
@@ -293,7 +293,7 @@ Monitor these metrics for the first week:
 #### 🔍 Empty Database
 **Symptoms:** App works but shows no data
 **Solutions:**
-1. Run data simulation: `npm run simulate-all:prod`
+1. Run BigQuery data retrieval: `npm run bigquery-sync:prod`
 2. Check database has tables created
 3. Verify BigQuery data is accessible
 4. Check ETL logs for errors
@@ -313,9 +313,31 @@ Monitor these metrics for the first week:
 
 ---
 
-## 📈 Phase 10: Monitoring & Maintenance
+## 🕐 Phase 10: Daily Cron Job Setup
 
-### Step 10.1: Set Up Monitoring
+### Step 10.1: Configure Render Cron Job
+After successful initial deployment, set up daily data retrieval:
+
+1. **In Render Dashboard** → Your Web Service → **Settings** → **Cron Jobs**
+2. **Add Cron Job**:
+   ```
+   Command: npm run bigquery-sync:prod
+   Schedule: 0 6 * * * (daily at 6 AM UTC)
+   ```
+3. **Purpose**: Automatically retrieves previous day's BigQuery data
+4. **Result**: Maintains rolling historical data in perpetuity
+
+### Step 10.2: Verify Cron Job Operation
+**Daily Check (first week):**
+- Monitor cron job execution logs
+- Verify daily_metrics table gets new records each day
+- Check that monthly_metrics rollups update appropriately
+
+---
+
+## 📈 Phase 11: Monitoring & Maintenance
+
+### Step 11.1: Set Up Monitoring
 1. **Render Metrics**: Available in dashboard (CPU, Memory, Response times)
 2. **Database Monitoring**: PostgreSQL metrics in database dashboard
 3. **Uptime Monitoring**: Consider external service like UptimeRobot

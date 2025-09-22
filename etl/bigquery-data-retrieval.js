@@ -131,8 +131,8 @@ class BigQueryDataRetrieval {
     console.log('=' .repeat(60));
 
     const startTime = Date.now();
-    const envStartDate = process.env.SIMULATION_START_DATE || '2025-07-01';
-    const endDate = process.env.SIMULATION_END_DATE || this.getYesterday();
+    const envStartDate = process.env.RETRIEVAL_START_DATE || '2025-07-01';
+    const endDate = process.env.RETRIEVAL_END_DATE || this.getYesterday();
 
     try {
       // Step 1: Set up accounts

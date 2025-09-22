@@ -1,7 +1,9 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+import pkg from 'pg';
 import dotenv from 'dotenv';
 
+const { Pool } = pkg;
 dotenv.config();
 
 export const getDatabasePath = () => {
@@ -9,11 +11,20 @@ export const getDatabasePath = () => {
 };
 
 export const getDatabase = async () => {
-  const db = await open({
-    filename: getDatabasePath(),
-    driver: sqlite3.Database
-  });
-  return db;
+  if (process.env.DATABASE_URL) {
+    // Use PostgreSQL for production
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+    return pool;
+  } else {
+    // Use SQLite for development
+    const db = await open({
+      filename: getDatabasePath(),
+      driver: sqlite3.Database
+    });
+    return db;
+  }
 };
 
 // Singleton pattern for shared database connection
