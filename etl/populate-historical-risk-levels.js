@@ -37,51 +37,62 @@ class HistoricalRiskPopulator {
     return Math.max(0, monthsDiff);
   }
 
-  calculateRiskLevel(monthData, accountData, previousMonthData = null) {
+  calculateRiskLevelAndReasons(monthData, accountData, previousMonthData = null) {
+    const reasons = [];
+
     // Check if account was archived during this specific month (regardless of current status)
     const monthStart = new Date(monthData.month + '-01');
     const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
-    
-    const archivedDate = accountData.archived_at 
+
+    const archivedDate = accountData.archived_at
       ? new Date(accountData.archived_at)
-      : accountData.earliest_unit_archived_at 
+      : accountData.earliest_unit_archived_at
         ? new Date(accountData.earliest_unit_archived_at)
         : null;
-    
+
     // If archived during this specific month = high risk
     if (archivedDate && archivedDate >= monthStart && archivedDate <= monthEnd) {
-      return 'high';
+      reasons.push('Recently Archived');
+      return { level: 'high', reasons };
     }
 
     // FROZEN accounts logic
     if (accountData.status === 'FROZEN') {
       const hasCurrentMonthTexts = monthData.total_texts_delivered > 0;
-      return hasCurrentMonthTexts ? 'medium' : 'high';
+      reasons.push('Frozen Account Status');
+      if (!hasCurrentMonthTexts) {
+        reasons.push('Frozen & Inactive');
+        return { level: 'high', reasons };
+      }
+      return { level: 'medium', reasons };
     }
 
     // LAUNCHED/ACTIVE accounts: Flag-based system
     let flagCount = 0;
     const monthsSinceStart = this.calculateMonthsSinceStart(accountData.launched_at, monthData.month);
-    
+
     // Flag 1: Monthly Redemptions (< 10 redemptions) - 1 point
     if (monthData.total_coupons_redeemed < this.MONTHLY_REDEMPTIONS_THRESHOLD) {
       flagCount++;
+      reasons.push('Low Monthly Redemptions');
     }
-    
+
     // Flag 2: Low Engagement Combo (< 300 subs AND < 35 redemptions) - 2 points
     // Only available for accounts after their first two months
     if (monthsSinceStart > 2) {
-      if (monthData.avg_active_subs_cnt < this.LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD && 
+      if (monthData.avg_active_subs_cnt < this.LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD &&
           monthData.total_coupons_redeemed < this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD) {
         flagCount += 2;
+        reasons.push('Low Engagement Combo');
       }
     }
-    
+
     // Flag 3: Low Activity (< 300 subscribers per account) - 1 point
     if (monthData.avg_active_subs_cnt < this.LOW_ACTIVITY_SUBS_THRESHOLD) {
       flagCount++;
+      reasons.push('Low Activity');
     }
-    
+
     // Flag 4 & 5: Drop flags only available after month 3 with previous month data
     if (previousMonthData && monthsSinceStart >= 3) {
       // Flag 4: Spend Drop (≥ 40% decrease) - 1 point
@@ -89,22 +100,32 @@ class HistoricalRiskPopulator {
         const spendDrop = Math.max(0, (previousMonthData.total_spend - monthData.total_spend) / previousMonthData.total_spend);
         if (spendDrop >= this.SPEND_DROP_THRESHOLD) {
           flagCount++;
+          reasons.push('Spend Drop');
         }
       }
-      
+
       // Flag 5: Redemptions Drop (≥ 50% decrease) - 1 point
       if (previousMonthData.total_coupons_redeemed > 0) {
         const redemptionsDrop = Math.max(0, (previousMonthData.total_coupons_redeemed - monthData.total_coupons_redeemed) / previousMonthData.total_coupons_redeemed);
         if (redemptionsDrop >= this.REDEMPTIONS_DROP_THRESHOLD) {
           flagCount++;
+          reasons.push('Redemptions Drop');
         }
       }
     }
-    
+
     // Determine risk level based on flag count
-    if (flagCount >= 3) return 'high';
-    if (flagCount >= 1) return 'medium';
-    return 'low';
+    let level;
+    if (flagCount >= 3) level = 'high';
+    else if (flagCount >= 1) level = 'medium';
+    else level = 'low';
+
+    return { level, reasons };
+  }
+
+  // Keep original method for backward compatibility
+  calculateRiskLevel(monthData, accountData, previousMonthData = null) {
+    return this.calculateRiskLevelAndReasons(monthData, accountData, previousMonthData).level;
   }
 
   async populateHistoricalRiskLevels() {
@@ -144,18 +165,18 @@ class HistoricalRiskPopulator {
           const currentRecord = records[i];
           const previousRecord = i > 0 ? records[i - 1] : null;
           
-          const riskLevel = this.calculateRiskLevel(
-            currentRecord, 
-            currentRecord, 
+          const riskResult = this.calculateRiskLevelAndReasons(
+            currentRecord,
+            currentRecord,
             previousRecord
           );
-          
+
           // Update the record
           await db.run(`
-            UPDATE monthly_metrics 
-            SET historical_risk_level = ?
+            UPDATE monthly_metrics
+            SET historical_risk_level = ?, risk_reasons = ?
             WHERE account_id = ? AND month = ?
-          `, [riskLevel, currentRecord.account_id, currentRecord.month]);
+          `, [riskResult.level, JSON.stringify(riskResult.reasons), currentRecord.account_id, currentRecord.month]);
           
           updateCount++;
           

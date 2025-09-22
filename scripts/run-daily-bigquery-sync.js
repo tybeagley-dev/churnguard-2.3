@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-class DailySimulation {
+class DailyBigQuerySync {
   constructor() {
     this.spendETL = new DailySpendETLSQLite();
     this.textsETL = new DailyTextsETLSQLite();
@@ -14,8 +14,8 @@ class DailySimulation {
     this.subsETL = new DailySubsETLSQLite();
   }
 
-  async simulateDay(date) {
-    console.log(`🚀 Starting daily simulation for ${date}...`);
+  async syncDay(date) {
+    console.log(`🚀 Starting daily BigQuery sync for ${date}...`);
     const startTime = Date.now();
     
     try {
@@ -41,7 +41,7 @@ class DailySimulation {
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       
-      console.log(`\n✅ Daily simulation completed for ${date} in ${duration}s`);
+      console.log(`\n✅ Daily BigQuery sync completed for ${date} in ${duration}s`);
       console.log(`📊 Results:`);
       console.log(`   💰 Spend: ${spendResult.updatedCount + spendResult.createdCount} records`);
       console.log(`   📱 Texts: ${textsResult.updatedCount + textsResult.createdCount} records`);
@@ -58,7 +58,7 @@ class DailySimulation {
       };
       
     } catch (error) {
-      console.error(`❌ Daily simulation failed for ${date}:`, error);
+      console.error(`❌ Daily BigQuery sync failed for ${date}:`, error);
       throw error;
     }
   }
@@ -73,10 +73,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   }
 
-  const simulation = new DailySimulation();
-  simulation.simulateDay(date)
+  const sync = new DailyBigQuerySync();
+  sync.syncDay(date)
     .then(result => {
-      console.log(`🎉 Simulation completed successfully!`);
+      console.log(`🎉 BigQuery sync completed successfully!`);
       process.exit(0);
     })
     .catch(error => {

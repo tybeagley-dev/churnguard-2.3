@@ -9,14 +9,14 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-class FullSimulationSQLite {
+class BigQueryDataRetrievalSQLite {
   constructor() {
     this.accountsETL = new AccountsETLSQLite();
     this.spendETL = new DailySpendETLSQLite();
     this.textsETL = new DailyTextsETLSQLite();
     this.couponsETL = new DailyCouponsETLSQLite();
     this.subsETL = new DailySubsETLSQLite();
-    this.dbPath = process.env.SQLITE_DB_PATH || './data/churnguard_simulation.db';
+    this.dbPath = process.env.SQLITE_DB_PATH || './data/churnguard_data.db';
   }
 
   async getDatabase() {
@@ -128,13 +128,13 @@ class FullSimulationSQLite {
     return yesterday.toISOString().split('T')[0];
   }
 
-  async runFullSimulation() {
+  async runFullRetrieval() {
     console.log('🌟 Starting ChurnGuard 2.3 ETL with Gap Detection');
     console.log('=' .repeat(60));
 
     const startTime = Date.now();
-    const envStartDate = process.env.SIMULATION_START_DATE || '2025-07-01';
-    const endDate = process.env.SIMULATION_END_DATE || this.getYesterday();
+    const envStartDate = process.env.RETRIEVAL_START_DATE || '2025-07-01';
+    const endDate = process.env.RETRIEVAL_END_DATE || this.getYesterday();
 
     try {
       // Step 1: Set up accounts
@@ -202,7 +202,7 @@ class FullSimulationSQLite {
       const avgPerDay = (totalDuration / dates.length).toFixed(1);
       
       console.log('\n' + '=' .repeat(60));
-      console.log('🎉 SIMULATION COMPLETED!');
+      console.log('🎉 BIGQUERY DATA RETRIEVAL COMPLETED!');
       console.log('=' .repeat(60));
       console.log(`⏱️  Total time: ${totalDuration}s (avg ${avgPerDay}s/day)`);
       console.log(`📊 Total records processed: ${totalRecords.toLocaleString()}`);
@@ -230,7 +230,7 @@ class FullSimulationSQLite {
       };
       
     } catch (error) {
-      console.error('❌ Full simulation failed:', error);
+      console.error('❌ BigQuery data retrieval failed:', error);
       return {
         success: false,
         error: error.message
@@ -241,14 +241,14 @@ class FullSimulationSQLite {
 
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const simulation = new FullSimulationSQLite();
-  simulation.runFullSimulation()
+  const retrieval = new BigQueryDataRetrievalSQLite();
+  retrieval.runFullRetrieval()
     .then(result => {
       if (result.success) {
         console.log('\n🎯 Ready to build ChurnGuard 2.2 dashboard using SQLite!');
         process.exit(0);
       } else {
-        console.error('❌ Simulation failed');
+        console.error('❌ BigQuery data retrieval failed');
         process.exit(1);
       }
     })
@@ -258,4 +258,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     });
 }
 
-export { FullSimulationSQLite };
+export { BigQueryDataRetrievalSQLite };

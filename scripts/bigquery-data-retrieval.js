@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-class FullSimulation {
+class BigQueryDataRetrieval {
   constructor() {
     this.accountsETL = new AccountsETL();
     this.dailySimulation = new DailySimulation();
@@ -22,7 +22,7 @@ class FullSimulation {
     return dates;
   }
 
-  async runFullSimulation() {
+  async runFullRetrieval() {
     console.log('🌟 Starting ChurnGuard 2.2 PostgreSQL Simulation');
     console.log('=' .repeat(60));
     
@@ -108,8 +108,8 @@ class FullSimulation {
 
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const simulation = new FullSimulation();
-  simulation.runFullSimulation()
+  const retrieval = new BigQueryDataRetrieval();
+  retrieval.runFullRetrieval()
     .then(result => {
       if (result.success) {
         console.log('🎯 Ready to build ChurnGuard 2.2 dashboard!');
@@ -125,4 +125,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     });
 }
 
-export { FullSimulation };
+export { BigQueryDataRetrieval };

@@ -21,6 +21,8 @@ class CurrentMonthUpdater {
     const monthLabel = new Date(currentMonth + '-01').toLocaleDateString('en-US', { year: 'numeric', month: 'long', timeZone: 'UTC' });
 
     console.log(`🔄 Updating current month data for ${monthLabel}...`);
+    console.log(`⚠️  WARNING: This will DELETE and recreate ALL monthly_metrics for ${monthLabel}`);
+    console.log(`⚠️  WARNING: This will WIPE risk_reasons, trending_risk_level, and historical_risk_level data!`);
 
     // Delete existing current month data
     await this.db.run(
