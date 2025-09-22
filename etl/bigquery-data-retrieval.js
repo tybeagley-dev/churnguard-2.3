@@ -1,8 +1,8 @@
-import { AccountsETL } from './accounts-etl.js';
-import { DailySpendETL } from './daily-spend-etl.js';
-import { DailyTextsETL } from './daily-texts-etl.js';
-import { DailyCouponsETL } from './daily-coupons-etl.js';
-import { DailySubsETL } from './daily-subs-etl.js';
+import { AccountsETLSQLite } from './accounts-etl-sqlite.js';
+import { DailySpendETLSQLite } from './daily-spend-etl-sqlite.js';
+import { DailyTextsETLSQLite } from './daily-texts-etl-sqlite.js';
+import { DailyCouponsETLSQLite } from './daily-coupons-etl-sqlite.js';
+import { DailySubsETLSQLite } from './daily-subs-etl-sqlite.js';
 import pkg from 'pg';
 import dotenv from 'dotenv';
 
@@ -11,11 +11,11 @@ dotenv.config();
 
 class BigQueryDataRetrieval {
   constructor() {
-    this.accountsETL = new AccountsETL();
-    this.spendETL = new DailySpendETL();
-    this.textsETL = new DailyTextsETL();
-    this.couponsETL = new DailyCouponsETL();
-    this.subsETL = new DailySubsETL();
+    this.accountsETL = new AccountsETLSQLite();
+    this.spendETL = new DailySpendETLSQLite();
+    this.textsETL = new DailyTextsETLSQLite();
+    this.couponsETL = new DailyCouponsETLSQLite();
+    this.subsETL = new DailySubsETLSQLite();
     this.pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
