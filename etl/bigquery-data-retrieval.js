@@ -1,8 +1,8 @@
-import { AccountsETLSQLite } from './accounts-etl-sqlite.js';
-import { DailySpendETLSQLite } from './daily-spend-etl-sqlite.js';
-import { DailyTextsETLSQLite } from './daily-texts-etl-sqlite.js';
-import { DailyCouponsETLSQLite } from './daily-coupons-etl-sqlite.js';
-import { DailySubsETLSQLite } from './daily-subs-etl-sqlite.js';
+import { AccountsETLPostgreSQL } from './accounts-etl-postgresql.js';
+import { DailySpendETLPostgreSQL } from './daily-spend-etl-postgresql.js';
+import { DailyTextsETLPostgreSQL } from './daily-texts-etl-postgresql.js';
+import { DailyCouponsETLPostgreSQL } from './daily-coupons-etl-postgresql.js';
+import { DailySubsETLPostgreSQL } from './daily-subs-etl-postgresql.js';
 import pkg from 'pg';
 import dotenv from 'dotenv';
 
@@ -11,11 +11,13 @@ dotenv.config();
 
 class BigQueryDataRetrieval {
   constructor() {
-    this.accountsETL = new AccountsETLSQLite();
-    this.spendETL = new DailySpendETLSQLite();
-    this.textsETL = new DailyTextsETLSQLite();
-    this.couponsETL = new DailyCouponsETLSQLite();
-    this.subsETL = new DailySubsETLSQLite();
+    // Initialize PostgreSQL ETL classes
+    this.accountsETL = new AccountsETLPostgreSQL();
+    this.spendETL = new DailySpendETLPostgreSQL();
+    this.textsETL = new DailyTextsETLPostgreSQL();
+    this.couponsETL = new DailyCouponsETLPostgreSQL();
+    this.subsETL = new DailySubsETLPostgreSQL();
+
     this.pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
