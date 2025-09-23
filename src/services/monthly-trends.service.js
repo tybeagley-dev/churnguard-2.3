@@ -35,15 +35,22 @@ export const getMonthlyTrendsData = async () => {
   const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
 
   // Transform data with month labels and current month indicator
-  return results.map(row => ({
-    month: row.month,
-    month_label: formatMonthLabel(row.month),
-    total_accounts: row.total_accounts || 0,
-    high_risk: row.high_risk || 0,
-    medium_risk: row.medium_risk || 0,
-    low_risk: row.low_risk || 0,
-    is_current_month: row.month === currentMonth
-  }));
+  return results.map(row => {
+    const highRisk = parseInt(row.high_risk) || 0;
+    const mediumRisk = parseInt(row.medium_risk) || 0;
+    const lowRisk = parseInt(row.low_risk) || 0;
+
+    return {
+      month: row.month,
+      month_label: formatMonthLabel(row.month),
+      total_accounts: parseInt(row.total_accounts) || 0,
+      high_risk: highRisk,
+      medium_risk: mediumRisk,
+      low_risk: lowRisk,
+      total: highRisk + mediumRisk + lowRisk,
+      is_current_month: row.month === currentMonth
+    };
+  });
 };
 
 const formatMonthLabel = (monthStr) => {
