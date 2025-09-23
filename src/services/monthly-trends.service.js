@@ -18,7 +18,7 @@ export const getMonthlyTrendsData = async () => {
     WHERE (
       -- Account eligibility: launched by month-end, not archived before month-start
       a.launched_at IS NOT NULL
-      AND a.launched_at < (mm.month || '-01')::date + INTERVAL '1 month'
+      AND a.launched_at::date < (mm.month || '-01')::date + INTERVAL '1 month'
       AND (
         COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
         OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= (mm.month || '-01')::date

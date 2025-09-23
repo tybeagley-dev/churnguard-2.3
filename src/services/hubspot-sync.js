@@ -54,10 +54,10 @@ export class HubSpotSyncService {
           AND a.hubspot_id != ''
           AND a.hubspot_id != 'null'
           AND a.launched_at IS NOT NULL
-          AND a.launched_at <= $3 || ' 23:59:59'
+          AND a.launched_at::date <= ($3 || ' 23:59:59')::timestamp
           AND (
             COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-            OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= $4 || '-01'
+            OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($4 || '-01')::date
           )
       `, [currentMonth, previousMonth, monthEnd, currentMonth]);
       const accounts = result.rows;
@@ -219,10 +219,10 @@ export class HubSpotSyncService {
           AND a.hubspot_id != 'null'
           AND NOT (
             a.launched_at IS NOT NULL
-            AND a.launched_at <= $1 || ' 23:59:59'
+            AND a.launched_at::date <= ($1 || ' 23:59:59')::timestamp
             AND (
               COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-              OR COALESCE(a.archived_at, a.earliest_unit_archived_at) >= $2 || '-01'
+              OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($2 || '-01')::date
             )
           )
       `, [monthEnd, currentMonth]);
