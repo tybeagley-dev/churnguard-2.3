@@ -12,22 +12,14 @@ router.post('/sync-data', async (req, res) => {
 
     const etl = new BigQueryDataRetrieval();
 
-    console.log('📊 Running accounts ETL...');
-    await etl.accountsETL.run();
+    console.log('🔄 Running full BigQuery to PostgreSQL ETL...');
+    const result = await etl.runFullRetrieval();
 
-    console.log('💰 Running daily spend ETL...');
-    await etl.spendETL.run();
-
-    console.log('📱 Running daily texts ETL...');
-    await etl.textsETL.run();
-
-    console.log('🎫 Running daily coupons ETL...');
-    await etl.couponsETL.run();
-
-    console.log('👥 Running daily subscribers ETL...');
-    await etl.subsETL.run();
-
-    console.log('✅ BigQuery to PostgreSQL sync completed successfully!');
+    if (result.success) {
+      console.log('✅ BigQuery to PostgreSQL sync completed successfully!');
+    } else {
+      throw new Error(`ETL failed: ${result.error || 'Unknown error'}`);
+    }
 
     res.json({
       success: true,
