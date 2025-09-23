@@ -62,10 +62,10 @@ const formatRiskFlags = (flags?: { monthlyRedemptionsFlag: boolean; lowActivityF
 
 // Helper function to extract individual risk reasons for filtering
 const getRiskReasons = (account: AccountMetric, isForTrending: boolean = false): string[] => {
-  // Use database-provided risk reasons when available
-  if (isForTrending && account.trending_risk_reasons) {
+  // Use database-provided risk reasons when available and non-empty
+  if (isForTrending && account.trending_risk_reasons && account.trending_risk_reasons.length > 0) {
     return account.trending_risk_reasons;
-  } else if (!isForTrending && account.risk_reasons) {
+  } else if (!isForTrending && account.risk_reasons && account.risk_reasons.length > 0) {
     return account.risk_reasons;
   }
   
