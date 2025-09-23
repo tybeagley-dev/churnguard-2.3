@@ -179,7 +179,8 @@ export default function AccountDetailModal({
                 </div>
               </div>
               
-              <ResponsiveContainer width="100%" height={400}>
+              <div className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis
@@ -198,7 +199,8 @@ export default function AccountDetailModal({
                       const formatValue = name === 'total_spend' ? formatCurrency(Number(value)) : formatNumber(Number(value));
                       const displayName = name === 'total_spend' ? 'Spend' :
                                          name === 'total_texts_delivered' ? 'Texts' :
-                                         name === 'coupons_redeemed' ? 'Redemptions' : 'Subscribers';
+                                         name === 'coupons_redeemed' ? 'Redemptions' :
+                                         name === 'active_subs_cnt' ? 'Subscribers' : String(name);
                       return [formatValue, displayName];
                     }}
                     labelFormatter={(label, payload) => {
@@ -254,7 +256,8 @@ export default function AccountDetailModal({
                     />
                   )}
                 </LineChart>
-              </ResponsiveContainer>
+                </ResponsiveContainer>
+              </div>
             </div>
 
             {/* Weekly Data Table */}

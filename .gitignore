@@ -36,6 +36,9 @@ pids
 # Coverage directory used by tools like istanbul
 coverage/
 
+# Large SQL files in scripts directory
+scripts/*.sql
+
 # OS generated files
 .DS_Store
 .DS_Store?
