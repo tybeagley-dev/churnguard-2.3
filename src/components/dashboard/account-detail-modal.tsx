@@ -179,7 +179,7 @@ export default function AccountDetailModal({
                 </div>
               </div>
               
-              <ResponsiveContainer width="100%" height={400}>
+              <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis
@@ -189,17 +189,11 @@ export default function AccountDetailModal({
                     height={80}
                     fontSize={12}
                   />
-                  <YAxis 
-                    tickFormatter={(value) => formatNumber(value)}
-                    fontSize={12}
-                  />
+                  <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip
-                    formatter={(value, name) => {
-                      const formatValue = name === 'total_spend' ? formatCurrency(Number(value)) : formatNumber(Number(value));
-                      const displayName = name === 'total_spend' ? 'Spend' :
-                                         name === 'total_texts_delivered' ? 'Texts' :
-                                         name === 'coupons_redeemed' ? 'Redemptions' : 'Subscribers';
-                      return [formatValue, displayName];
+                    formatter={(value, name, props) => {
+                      const formatValue = name === 'Spend' ? formatCurrency(Number(value)) : formatNumber(Number(value));
+                      return [formatValue, name];
                     }}
                     labelFormatter={(label, payload) => {
                       if (payload && payload[0] && payload[0].payload) {

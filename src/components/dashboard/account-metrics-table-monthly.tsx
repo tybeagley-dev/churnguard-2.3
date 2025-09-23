@@ -676,13 +676,13 @@ export default function AccountMetricsTableMonthly() {
               {comparisonMetrics && (
                 <>
                   <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
-                    <span className="text-xs text-gray-600">All Accounts</span>
-                    <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(baselineMetrics.total_spend)}</span>
+                    <span className="text-xs text-gray-600">Comparison</span>
+                    <span className="text-sm font-bold text-gray-600">{formatCurrencyWhole(comparisonMetrics?.total_spend || 0)}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(summaryStats.totalSpend - baselineMetrics.total_spend, 'currency')}
+                      {formatDelta((baselineMetrics?.total_spend || 0) - (comparisonMetrics?.total_spend || 0), 'currency')}
                     </div>
                   </div>
                 </>
@@ -701,13 +701,13 @@ export default function AccountMetricsTableMonthly() {
               {comparisonMetrics && (
                 <>
                   <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
-                    <span className="text-xs text-gray-600">All Accounts</span>
-                    <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_texts.toLocaleString()}</span>
+                    <span className="text-xs text-gray-600">Comparison</span>
+                    <span className="text-sm font-bold text-gray-600">{(comparisonMetrics?.total_texts || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(summaryStats.totalTexts - baselineMetrics.total_texts, 'number')}
+                      {formatDelta((baselineMetrics?.total_texts || 0) - (comparisonMetrics?.total_texts || 0), 'number')}
                     </div>
                   </div>
                 </>
@@ -726,13 +726,13 @@ export default function AccountMetricsTableMonthly() {
               {comparisonMetrics && (
                 <>
                   <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
-                    <span className="text-xs text-gray-600">All Accounts</span>
-                    <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_redemptions.toLocaleString()}</span>
+                    <span className="text-xs text-gray-600">Comparison</span>
+                    <span className="text-sm font-bold text-gray-600">{(comparisonMetrics?.total_redemptions || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(summaryStats.totalRedemptions - baselineMetrics.total_redemptions, 'number')}
+                      {formatDelta((baselineMetrics?.total_redemptions || 0) - (comparisonMetrics?.total_redemptions || 0), 'number')}
                     </div>
                   </div>
                 </>
@@ -751,13 +751,13 @@ export default function AccountMetricsTableMonthly() {
               {comparisonMetrics && (
                 <>
                   <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
-                    <span className="text-xs text-gray-600">All Accounts</span>
-                    <span className="text-sm font-bold text-gray-600">{baselineMetrics.total_subscribers.toLocaleString()}</span>
+                    <span className="text-xs text-gray-600">Comparison</span>
+                    <span className="text-sm font-bold text-gray-600">{(comparisonMetrics?.total_subscribers || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
                     <div className="text-sm font-bold">
-                      {formatDelta(summaryStats.totalSubscribers - baselineMetrics.total_subscribers, 'number')}
+                      {formatDelta((baselineMetrics?.total_subscribers || 0) - (comparisonMetrics?.total_subscribers || 0), 'number')}
                     </div>
                   </div>
                 </>
