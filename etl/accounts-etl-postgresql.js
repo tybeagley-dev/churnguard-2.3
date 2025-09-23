@@ -14,12 +14,25 @@ class AccountsETLPostgreSQL {
 
     // Handle credentials: use JSON string in production, file path in development
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-      bigqueryConfig.credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+      try {
+        bigqueryConfig.credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+      } catch (error) {
+        console.error('❌ Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON:', error);
+        throw new Error('Invalid BigQuery credentials JSON');
+      }
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       bigqueryConfig.keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    } else {
+      console.error('❌ No BigQuery credentials found. Set GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_APPLICATION_CREDENTIALS');
+      throw new Error('Missing BigQuery credentials');
     }
 
     this.bigquery = new BigQuery(bigqueryConfig);
+
+    // Initialize PostgreSQL pool
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL environment variable is required');
+    }
 
     this.pool = new Pool({
       connectionString: process.env.DATABASE_URL,
