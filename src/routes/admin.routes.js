@@ -8,7 +8,7 @@ router.post('/sync-data', async (req, res) => {
     console.log('🔄 Starting BigQuery to PostgreSQL data sync...');
 
     // Import the BigQuery ETL class
-    const { default: BigQueryDataRetrieval } = await import('../../etl/bigquery-data-retrieval.js');
+    const { BigQueryDataRetrieval } = await import('../../etl/bigquery-data-retrieval.js');
 
     const etl = new BigQueryDataRetrieval();
 
