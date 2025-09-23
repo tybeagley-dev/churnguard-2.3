@@ -4,6 +4,9 @@ data/
 *.sqlite
 *.sqlite3
 
+# Large SQL export files
+scripts/*.sql
+
 # Environment and credentials
 .env
 config/credentials/bigquery-credentials.json
