@@ -20,9 +20,17 @@ class AccountsETLPostgreSQL {
     }
 
     this.bigquery = new BigQuery(bigqueryConfig);
+
+    this.pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+    });
   }
 
   async getDatabase() {
+    if (!this.pool) {
+      throw new Error('PostgreSQL pool not initialized');
+    }
     return this.pool;
   }
 
