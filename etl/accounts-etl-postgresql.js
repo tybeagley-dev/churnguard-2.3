@@ -8,15 +8,18 @@ dotenv.config();
 class AccountsETLPostgreSQL {
   constructor() {
     // BigQuery client
-    this.bigquery = new BigQuery({
+    const bigqueryConfig = {
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-    });
+    };
 
-    this.pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-    });
+    // Handle credentials: use JSON string in production, file path in development
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+      bigqueryConfig.credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      bigqueryConfig.keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    }
+
+    this.bigquery = new BigQuery(bigqueryConfig);
   }
 
   async getDatabase() {
