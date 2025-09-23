@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 
 // Import our organized modules
 import { getSharedDatabase } from './config/database.js';
+import { runMigrations } from './config/migrate.js';
 import historicalPerformanceRoutes from './src/routes/historical-performance.routes.js';
 import monthlyTrendsRoutes from './src/routes/monthly-trends.routes.js';
 import accountMetricsOverviewRoutes from './src/routes/account-metrics-overview.routes.js';
@@ -29,12 +30,14 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Initialize database connection
+// Initialize database connection and run migrations
 let db;
 try {
   db = await getSharedDatabase();
   if (process.env.DATABASE_URL) {
     console.log('📊 Connected to PostgreSQL production database');
+    // Run migrations for PostgreSQL (SQLite doesn't need them - schema exists in ETL files)
+    await runMigrations();
   } else {
     console.log('📊 Connected to SQLite simulation database');
   }
