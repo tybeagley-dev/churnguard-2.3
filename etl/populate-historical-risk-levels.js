@@ -120,7 +120,10 @@ class HistoricalRiskPopulator {
     else if (flagCount >= 1) level = 'medium';
     else level = 'low';
 
-    return { level, reasons };
+    // Ensure low-risk accounts with no flags show "No flags" instead of empty array
+    const finalReasons = reasons.length > 0 ? reasons : ['No flags'];
+
+    return { level, reasons: finalReasons };
   }
 
   // Keep original method for backward compatibility
