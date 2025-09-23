@@ -186,10 +186,10 @@ export default function AccountMetricsTable() {
     // Calculate summary statistics for filtered data (comparison period)
     const summaryStats = filteredAccounts.reduce((acc, account) => {
       acc.totalAccounts += 1;
-      acc.totalSpend += account.total_spend || 0;
-      acc.totalRedemptions += account.coupons_redeemed || 0;
-      acc.totalTexts += account.total_texts_delivered || 0;
-      acc.totalSubscribers += account.active_subs_cnt || 0;
+      acc.totalSpend += parseFloat(account.total_spend) || 0;
+      acc.totalRedemptions += parseInt(account.coupons_redeemed) || 0;
+      acc.totalTexts += parseInt(account.total_texts_delivered) || 0;
+      acc.totalSubscribers += parseInt(account.active_subs_cnt) || 0;
       
       // Count risk levels
       const riskLevel = account.risk_level || 'low';

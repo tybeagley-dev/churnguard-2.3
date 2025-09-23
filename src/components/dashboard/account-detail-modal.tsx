@@ -100,28 +100,28 @@ export default function AccountDetailModal({
               <div className="bg-purple-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-purple-800 mb-2">Total Spend (12 Weeks)</div>
                 <div className="text-lg font-bold text-purple-600">
-                  {formatCurrency(chartData.reduce((sum, item) => sum + (item.total_spend || 0), 0))}
+                  {formatCurrency(chartData.reduce((sum, item) => sum + (parseFloat(item.total_spend) || 0), 0))}
                 </div>
               </div>
               
               <div className="bg-orange-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-orange-800 mb-2">Total Texts (12 Weeks)</div>
                 <div className="text-lg font-bold text-orange-600">
-                  {formatNumber(chartData.reduce((sum, item) => sum + (item.total_texts_delivered || 0), 0))}
+                  {formatNumber(chartData.reduce((sum, item) => sum + (parseInt(item.total_texts_delivered) || 0), 0))}
                 </div>
               </div>
               
               <div className="bg-green-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-green-800 mb-2">Total Redemptions (12 Weeks)</div>
                 <div className="text-lg font-bold text-green-600">
-                  {formatNumber(chartData.reduce((sum, item) => sum + (item.coupons_redeemed || 0), 0))}
+                  {formatNumber(chartData.reduce((sum, item) => sum + (parseInt(item.coupons_redeemed) || 0), 0))}
                 </div>
               </div>
               
               <div className="bg-blue-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-blue-800 mb-2">Avg Subscribers (12 Weeks)</div>
                 <div className="text-lg font-bold text-blue-600">
-                  {formatNumber(Math.round(chartData.reduce((sum, item) => sum + (item.active_subs_cnt || 0), 0) / Math.max(chartData.length, 1)))}
+                  {formatNumber(Math.round(chartData.reduce((sum, item) => sum + (parseInt(item.active_subs_cnt) || 0), 0) / Math.max(chartData.length, 1)))}
                 </div>
               </div>
             </div>

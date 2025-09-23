@@ -52,10 +52,10 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
 
   // Calculate aggregated totals for upper portion (summary cards)
   const totals = accounts.reduce((acc, account) => {
-    acc.total_spend += account.total_spend;
-    acc.total_texts_delivered += account.total_texts_delivered;
-    acc.total_coupons_redeemed += account.total_coupons_redeemed;
-    acc.total_subscribers += account.total_subscribers;
+    acc.total_spend += parseFloat(account.total_spend) || 0;
+    acc.total_texts_delivered += parseInt(account.total_texts_delivered) || 0;
+    acc.total_coupons_redeemed += parseInt(account.total_coupons_redeemed) || 0;
+    acc.total_subscribers += parseInt(account.total_subscribers) || 0;
     return acc;
   }, {
     total_spend: 0,
@@ -168,10 +168,10 @@ export const getComparisonData = async (comparisonPeriod) => {
           }
 
           const avgAccount = accountAverageMap.get(account.account_id);
-          avgAccount.total_spend += account.total_spend;
-          avgAccount.total_texts_delivered += account.total_texts_delivered;
-          avgAccount.coupons_redeemed += account.coupons_redeemed;
-          avgAccount.active_subs_cnt += account.active_subs_cnt;
+          avgAccount.total_spend += parseFloat(account.total_spend) || 0;
+          avgAccount.total_texts_delivered += parseInt(account.total_texts_delivered) || 0;
+          avgAccount.coupons_redeemed += parseInt(account.coupons_redeemed) || 0;
+          avgAccount.active_subs_cnt += parseInt(account.active_subs_cnt) || 0;
         });
       });
 
@@ -186,10 +186,10 @@ export const getComparisonData = async (comparisonPeriod) => {
 
       // Calculate averaged metrics
       const avgMetrics = averagedAccounts.reduce((acc, account) => {
-        acc.total_spend += account.total_spend;
-        acc.total_texts += account.total_texts_delivered;
-        acc.total_redemptions += account.coupons_redeemed;
-        acc.total_subscribers += account.active_subs_cnt;
+        acc.total_spend += parseFloat(account.total_spend) || 0;
+        acc.total_texts += parseInt(account.total_texts_delivered) || 0;
+        acc.total_redemptions += parseInt(account.coupons_redeemed) || 0;
+        acc.total_subscribers += parseInt(account.active_subs_cnt) || 0;
         return acc;
       }, { total_spend: 0, total_texts: 0, total_redemptions: 0, total_subscribers: 0 });
 
