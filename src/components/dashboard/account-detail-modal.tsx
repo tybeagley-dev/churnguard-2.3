@@ -193,7 +193,12 @@ export default function AccountDetailModal({
                   <YAxis
                     tickFormatter={(value) => formatNumber(value)}
                     tick={{ fontSize: 12 }}
-                    domain={[0, 'dataMax + 10%']}
+                    domain={[0, (dataMax) => {
+                      // Calculate a nice round number above the max value
+                      const maxValue = dataMax * 1.1; // Add 10% padding
+                      const magnitude = Math.pow(10, Math.floor(Math.log10(maxValue)));
+                      return Math.ceil(maxValue / magnitude) * magnitude;
+                    }]}
                     tickCount={6}
                   />
                   <Tooltip
