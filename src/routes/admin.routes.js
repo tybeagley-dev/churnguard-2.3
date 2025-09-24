@@ -158,7 +158,7 @@ router.post('/sync-daily', async (req, res) => {
     const { DailyProductionETLPostgreSQL } = await import('../../etl/daily-production-etl-postgresql.js');
     const etl = new DailyProductionETLPostgreSQL();
 
-    const result = await etl.extractDailyMetrics(targetDate);
+    const result = await etl.extractAndLoadDailyMetrics(targetDate);
 
     await tracker.completeStep(targetDate, 'daily', {
       recordsProcessed: result.spend.createdCount + result.spend.updatedCount +
