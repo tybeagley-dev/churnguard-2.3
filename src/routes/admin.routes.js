@@ -2,44 +2,81 @@ import express from 'express';
 
 const router = express.Router();
 
-// Daily production ETL endpoint
+// Master ETL endpoint - orchestrates all modular steps
 router.post('/sync-data', async (req, res) => {
   try {
-    console.log('🔄 Starting Daily Production ETL...');
+    console.log('🔄 Starting Modular Daily Production ETL...');
 
-    // Get target date from request body (defaults to yesterday)
     const { date } = req.body;
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    // Import the PostgreSQL Daily Production ETL class
-    const { DailyProductionETLPostgreSQL } = await import('../../etl/daily-production-etl-postgresql.js');
+    console.log(`🔄 Running Complete Daily Production ETL for ${targetDate}...`);
 
-    const etl = new DailyProductionETLPostgreSQL();
+    const startTime = Date.now();
+    const results = {};
 
-    console.log(`🔄 Running Daily Production ETL${date ? ` for ${date}` : ' (yesterday)'}...`);
-    const result = await etl.runDailyETL(date);
+    // Step 1: Accounts
+    console.log('🚀 Step 1: Syncing accounts...');
+    const accountsResponse = await fetch(`${process.env.BASE_URL || 'http://localhost:10000'}/api/admin/sync-accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: targetDate })
+    });
 
-    if (result.success) {
-      console.log('✅ Daily Production ETL completed successfully!');
-    } else {
-      throw new Error(`ETL failed: ${result.error || 'Unknown error'}`);
+    if (!accountsResponse.ok) {
+      const error = await accountsResponse.json();
+      throw new Error(`Accounts sync failed: ${error.error}`);
     }
+
+    results.accounts = await accountsResponse.json();
+    console.log('✅ Step 1 complete: Accounts synced');
+
+    // Step 2: Daily Metrics
+    console.log('🚀 Step 2: Syncing daily metrics...');
+    const dailyResponse = await fetch(`${process.env.BASE_URL || 'http://localhost:10000'}/api/admin/sync-daily`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: targetDate })
+    });
+
+    if (!dailyResponse.ok) {
+      const error = await dailyResponse.json();
+      throw new Error(`Daily metrics sync failed: ${error.error}`);
+    }
+
+    results.daily = await dailyResponse.json();
+    console.log('✅ Step 2 complete: Daily metrics synced');
+
+    // Step 3: Monthly Metrics
+    console.log('🚀 Step 3: Syncing monthly metrics...');
+    const monthlyResponse = await fetch(`${process.env.BASE_URL || 'http://localhost:10000'}/api/admin/sync-monthly`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: targetDate })
+    });
+
+    if (!monthlyResponse.ok) {
+      const error = await monthlyResponse.json();
+      throw new Error(`Monthly metrics sync failed: ${error.error}`);
+    }
+
+    results.monthly = await monthlyResponse.json();
+    console.log('✅ Step 3 complete: Monthly metrics synced');
+
+    const duration = Date.now() - startTime;
+    console.log(`🎉 Complete Daily Production ETL finished in ${duration}ms`);
 
     res.json({
       success: true,
-      message: 'Daily Production ETL completed successfully',
-      processDate: result.processDate,
-      duration: result.duration,
-      results: {
-        accounts: result.accountsResults,
-        extraction: result.extractResults,
-        monthly: result.monthlyResults,
-        risk: result.riskResults
-      },
+      message: 'Complete Daily Production ETL completed successfully',
+      processDate: targetDate,
+      duration,
+      results,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('❌ Data sync failed:', error);
+    console.error('❌ Modular ETL failed:', error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -48,9 +85,186 @@ router.post('/sync-data', async (req, res) => {
   }
 });
 
-// Check sync status
+// Modular ETL: Sync Accounts Only
+router.post('/sync-accounts', async (req, res) => {
+  try {
+    const { date } = req.body;
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // Default to yesterday
+
+    console.log(`👥 Starting Accounts ETL for ${targetDate}...`);
+
+    const { ETLTracker } = await import('../../etl/etl-tracker.js');
+    const tracker = new ETLTracker();
+
+    // Validate and start step
+    await tracker.validateCanRun(targetDate, 'accounts');
+    await tracker.startStep(targetDate, 'accounts');
+
+    const { AccountsETLPostgreSQL } = await import('../../etl/accounts-etl-postgresql.js');
+    const accountsETL = new AccountsETLPostgreSQL();
+
+    const result = await accountsETL.populateAccounts();
+
+    await tracker.completeStep(targetDate, 'accounts', {
+      accountsProcessed: result.accountsProcessed
+    });
+
+    res.json({
+      success: true,
+      message: 'Accounts ETL completed successfully',
+      date: targetDate,
+      result,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Accounts ETL failed:', error);
+
+    const { date } = req.body;
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    try {
+      const { ETLTracker } = await import('../../etl/etl-tracker.js');
+      const tracker = new ETLTracker();
+      await tracker.failStep(targetDate, 'accounts', error.message);
+    } catch (trackingError) {
+      console.error('❌ Failed to update tracking:', trackingError);
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      date: targetDate,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Modular ETL: Sync Daily Metrics Only (requires accounts complete)
+router.post('/sync-daily', async (req, res) => {
+  try {
+    const { date } = req.body;
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    console.log(`📊 Starting Daily Metrics ETL for ${targetDate}...`);
+
+    const { ETLTracker } = await import('../../etl/etl-tracker.js');
+    const tracker = new ETLTracker();
+
+    // Validate and start step
+    await tracker.validateCanRun(targetDate, 'daily');
+    await tracker.startStep(targetDate, 'daily');
+
+    const { DailyProductionETLPostgreSQL } = await import('../../etl/daily-production-etl-postgresql.js');
+    const etl = new DailyProductionETLPostgreSQL();
+
+    const result = await etl.extractDailyMetrics(targetDate);
+
+    await tracker.completeStep(targetDate, 'daily', {
+      recordsProcessed: result.spend.createdCount + result.spend.updatedCount +
+                       result.texts.createdCount + result.texts.updatedCount +
+                       result.coupons.createdCount + result.coupons.updatedCount +
+                       result.subs.createdCount + result.subs.updatedCount,
+      breakdown: result
+    });
+
+    res.json({
+      success: true,
+      message: 'Daily Metrics ETL completed successfully',
+      date: targetDate,
+      result,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Daily Metrics ETL failed:', error);
+
+    const { date } = req.body;
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    try {
+      const { ETLTracker } = await import('../../etl/etl-tracker.js');
+      const tracker = new ETLTracker();
+      await tracker.failStep(targetDate, 'daily', error.message);
+    } catch (trackingError) {
+      console.error('❌ Failed to update tracking:', trackingError);
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      date: targetDate,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Modular ETL: Sync Monthly Metrics Only (requires accounts and daily complete)
+router.post('/sync-monthly', async (req, res) => {
+  try {
+    const { date } = req.body;
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    console.log(`📈 Starting Monthly Metrics ETL for ${targetDate}...`);
+
+    const { ETLTracker } = await import('../../etl/etl-tracker.js');
+    const tracker = new ETLTracker();
+
+    // Validate and start step
+    await tracker.validateCanRun(targetDate, 'monthly');
+    await tracker.startStep(targetDate, 'monthly');
+
+    const { DailyProductionETLPostgreSQL } = await import('../../etl/daily-production-etl-postgresql.js');
+    const etl = new DailyProductionETLPostgreSQL();
+
+    const monthlyResult = await etl.aggregateToMonthlyMetrics(targetDate);
+    const riskResult = await etl.updateTrendingRiskLevels(targetDate);
+
+    await tracker.completeStep(targetDate, 'monthly', {
+      monthsUpdated: monthlyResult.monthsUpdated,
+      trendingRiskUpdated: riskResult.updatedCount
+    });
+
+    res.json({
+      success: true,
+      message: 'Monthly Metrics ETL completed successfully',
+      date: targetDate,
+      result: {
+        monthly: monthlyResult,
+        risk: riskResult
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Monthly Metrics ETL failed:', error);
+
+    const { date } = req.body;
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    try {
+      const { ETLTracker } = await import('../../etl/etl-tracker.js');
+      const tracker = new ETLTracker();
+      await tracker.failStep(targetDate, 'monthly', error.message);
+    } catch (trackingError) {
+      console.error('❌ Failed to update tracking:', trackingError);
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      date: targetDate,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Check sync status with ETL tracking
 router.get('/sync-status', async (req, res) => {
   try {
+    const { date } = req.query;
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
     const { getSharedDatabase } = await import('../../config/database.js');
     const db = await getSharedDatabase();
 
@@ -59,10 +273,17 @@ router.get('/sync-status', async (req, res) => {
     const dailyResult = await db.query('SELECT COUNT(*) as count FROM daily_metrics');
     const monthlyResult = await db.query('SELECT COUNT(*) as count FROM monthly_metrics');
 
+    // Get ETL tracking status
+    const { ETLTracker } = await import('../../etl/etl-tracker.js');
+    const tracker = new ETLTracker();
+    const etlStatus = await tracker.getDateStatus(targetDate);
+
     res.json({
       accounts: accountsResult.rows[0].count,
       daily_metrics: dailyResult.rows[0].count,
       monthly_metrics: monthlyResult.rows[0].count,
+      etl_status: etlStatus,
+      date: targetDate,
       timestamp: new Date().toISOString()
     });
 
