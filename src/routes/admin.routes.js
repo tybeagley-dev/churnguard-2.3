@@ -2,28 +2,39 @@ import express from 'express';
 
 const router = express.Router();
 
-// One-time data sync endpoint
+// Daily production ETL endpoint
 router.post('/sync-data', async (req, res) => {
   try {
-    console.log('🔄 Starting BigQuery to PostgreSQL data sync...');
+    console.log('🔄 Starting Daily Production ETL...');
 
-    // Import the BigQuery ETL class
-    const { BigQueryDataRetrieval } = await import('../../etl/bigquery-data-retrieval.js');
+    // Get target date from request body (defaults to yesterday)
+    const { date } = req.body;
 
-    const etl = new BigQueryDataRetrieval();
+    // Import the PostgreSQL Daily Production ETL class
+    const { DailyProductionETLPostgreSQL } = await import('../../etl/daily-production-etl-postgresql.js');
 
-    console.log('🔄 Running full BigQuery to PostgreSQL ETL...');
-    const result = await etl.runFullRetrieval();
+    const etl = new DailyProductionETLPostgreSQL();
+
+    console.log(`🔄 Running Daily Production ETL${date ? ` for ${date}` : ' (yesterday)'}...`);
+    const result = await etl.runDailyETL(date);
 
     if (result.success) {
-      console.log('✅ BigQuery to PostgreSQL sync completed successfully!');
+      console.log('✅ Daily Production ETL completed successfully!');
     } else {
       throw new Error(`ETL failed: ${result.error || 'Unknown error'}`);
     }
 
     res.json({
       success: true,
-      message: 'BigQuery data sync completed successfully',
+      message: 'Daily Production ETL completed successfully',
+      processDate: result.processDate,
+      duration: result.duration,
+      results: {
+        accounts: result.accountsResults,
+        extraction: result.extractResults,
+        monthly: result.monthlyResults,
+        risk: result.riskResults
+      },
       timestamp: new Date().toISOString()
     });
 
