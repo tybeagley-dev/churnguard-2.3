@@ -247,25 +247,27 @@ export class DailyProductionETLPostgreSQL {
   async extractAndLoadDailyMetrics(date) {
     console.log(`📊 Extracting daily metrics for ${date}...`);
 
-    // Run all 4 ETL processes in parallel (same as existing logic)
-    const [spendResult, textsResult, couponsResult, subsResult] = await Promise.all([
-      this.spendETL.processDate(date).catch(err => {
-        console.warn(`⚠️  Spend ETL warning for ${date}:`, err.message);
-        return { updatedCount: 0, createdCount: 0, error: err.message };
-      }),
-      this.textsETL.processDate(date).catch(err => {
-        console.warn(`⚠️  Texts ETL warning for ${date}:`, err.message);
-        return { updatedCount: 0, createdCount: 0, error: err.message };
-      }),
-      this.couponsETL.processDate(date).catch(err => {
-        console.warn(`⚠️  Coupons ETL warning for ${date}:`, err.message);
-        return { updatedCount: 0, createdCount: 0, error: err.message };
-      }),
-      this.subsETL.processDate(date).catch(err => {
-        console.warn(`⚠️  Subs ETL warning for ${date}:`, err.message);
-        return { updatedCount: 0, createdCount: 0, error: err.message };
-      })
-    ]);
+    // Run ETL processes sequentially to avoid race conditions with UPDATE-first-then-INSERT logic
+    // PostgreSQL concurrent access can cause duplicate key violations when all processes try to INSERT simultaneously
+    const spendResult = await this.spendETL.processDate(date).catch(err => {
+      console.warn(`⚠️  Spend ETL warning for ${date}:`, err.message);
+      return { updatedCount: 0, createdCount: 0, error: err.message };
+    });
+
+    const textsResult = await this.textsETL.processDate(date).catch(err => {
+      console.warn(`⚠️  Texts ETL warning for ${date}:`, err.message);
+      return { updatedCount: 0, createdCount: 0, error: err.message };
+    });
+
+    const couponsResult = await this.couponsETL.processDate(date).catch(err => {
+      console.warn(`⚠️  Coupons ETL warning for ${date}:`, err.message);
+      return { updatedCount: 0, createdCount: 0, error: err.message };
+    });
+
+    const subsResult = await this.subsETL.processDate(date).catch(err => {
+      console.warn(`⚠️  Subs ETL warning for ${date}:`, err.message);
+      return { updatedCount: 0, createdCount: 0, error: err.message };
+    });
 
     const totalRecords = (
       spendResult.updatedCount + spendResult.createdCount +
