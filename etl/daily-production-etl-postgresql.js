@@ -9,7 +9,7 @@ import { BigQuery } from '@google-cloud/bigquery';
 import pkg from 'pg';
 import dotenv from 'dotenv';
 
-const { Pool } = pkg;
+const { Pool, Client } = pkg;
 dotenv.config();
 
 export class DailyProductionETLPostgreSQL {
@@ -296,121 +296,154 @@ export class DailyProductionETLPostgreSQL {
   async aggregateToMonthlyMetrics(date) {
     console.log(`📈 Aggregating to monthly metrics for ${date}...`);
 
-    // Use existing pool to avoid SSL timeout on new connections
-    const month = date.substring(0, 7); // YYYY-MM format
+    // Use dedicated connection to avoid SSL timeout from pool exhaustion
+    const client = new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+      statement_timeout: 600000,  // 10 minutes
+      query_timeout: 600000,      // 10 minutes
+      connectionTimeoutMillis: 30000
+    });
 
-    // Get all accounts that had activity this month
-    const result = await this.pool.query(`
-      SELECT DISTINCT account_id
-      FROM daily_metrics
-      WHERE date >= $1 AND date < ($1::date + INTERVAL '1 month')::date
-    `, [month + '-01']);
+    try {
+      await client.connect();
+      console.log('🔗 Connected with dedicated client for monthly aggregation');
 
-    const accountsToUpdate = result.rows;
-    console.log(`🔄 Updating monthly metrics for ${accountsToUpdate.length} accounts in ${month}...`);
+      const month = date.substring(0, 7); // YYYY-MM format
 
-    let monthsUpdated = 0;
+      // Get all accounts that had activity this month
+      const result = await client.query(`
+        SELECT DISTINCT account_id
+        FROM daily_metrics
+        WHERE date >= $1 AND date < ($1::date + INTERVAL '1 month')::date
+      `, [month + '-01']);
 
-    for (const { account_id } of accountsToUpdate) {
-      try {
-        // Calculate month-to-date aggregations
-        const monthlyResult = await this.pool.query(`
-          INSERT INTO monthly_metrics (
-            account_id, month, month_label,
-            total_spend, total_texts_delivered, total_coupons_redeemed,
-            avg_active_subs_cnt
-          )
-          SELECT
-            $1 as account_id,
-            $2 as month,
-            TO_CHAR(DATE($2 || '-01'), 'Mon YYYY') as month_label,
-            COALESCE(SUM(total_spend), 0) as total_spend,
-            COALESCE(SUM(total_texts_delivered), 0) as total_texts_delivered,
-            COALESCE(SUM(coupons_redeemed), 0) as total_coupons_redeemed,
-            COALESCE(AVG(active_subs_cnt), 0) as avg_active_subs_cnt
-          FROM daily_metrics
-          WHERE account_id = $1
-            AND date >= $2 || '-01'
-            AND date < (($2 || '-01')::date + INTERVAL '1 month')::date
-          ON CONFLICT (account_id, month) DO UPDATE SET
-            total_spend = EXCLUDED.total_spend,
-            total_texts_delivered = EXCLUDED.total_texts_delivered,
-            total_coupons_redeemed = EXCLUDED.total_coupons_redeemed,
-            avg_active_subs_cnt = EXCLUDED.avg_active_subs_cnt,
-            month_label = EXCLUDED.month_label
-        `, [account_id, month]);
+      const accountsToUpdate = result.rows;
+      console.log(`🔄 Updating monthly metrics for ${accountsToUpdate.length} accounts in ${month}...`);
 
-        if (monthlyResult.rowCount > 0) {
-          monthsUpdated++;
+      let monthsUpdated = 0;
+
+      for (const { account_id } of accountsToUpdate) {
+        try {
+          // Calculate month-to-date aggregations
+          const monthlyResult = await client.query(`
+            INSERT INTO monthly_metrics (
+              account_id, month, month_label,
+              total_spend, total_texts_delivered, total_coupons_redeemed,
+              avg_active_subs_cnt
+            )
+            SELECT
+              $1 as account_id,
+              $2 as month,
+              TO_CHAR(DATE($2 || '-01'), 'Mon YYYY') as month_label,
+              COALESCE(SUM(total_spend), 0) as total_spend,
+              COALESCE(SUM(total_texts_delivered), 0) as total_texts_delivered,
+              COALESCE(SUM(coupons_redeemed), 0) as total_coupons_redeemed,
+              COALESCE(AVG(active_subs_cnt), 0) as avg_active_subs_cnt
+            FROM daily_metrics
+            WHERE account_id = $1
+              AND date >= $2 || '-01'
+              AND date < (($2 || '-01')::date + INTERVAL '1 month')::date
+            ON CONFLICT (account_id, month) DO UPDATE SET
+              total_spend = EXCLUDED.total_spend,
+              total_texts_delivered = EXCLUDED.total_texts_delivered,
+              total_coupons_redeemed = EXCLUDED.total_coupons_redeemed,
+              avg_active_subs_cnt = EXCLUDED.avg_active_subs_cnt,
+              month_label = EXCLUDED.month_label
+          `, [account_id, month]);
+
+          if (monthlyResult.rowCount > 0) {
+            monthsUpdated++;
+          }
+
+        } catch (error) {
+          console.error(`❌ Error updating monthly metrics for ${account_id}:`, error.message);
         }
-
-      } catch (error) {
-        console.error(`❌ Error updating monthly metrics for ${account_id}:`, error.message);
       }
+
+      console.log(`✅ Monthly metrics updated for ${monthsUpdated} account-months`);
+
+      return {
+        monthsUpdated,
+        accountsProcessed: accountsToUpdate.length,
+        month
+      };
+
+    } finally {
+      await client.end();
+      console.log('🔌 Closed dedicated client connection');
     }
-
-    console.log(`✅ Monthly metrics updated for ${monthsUpdated} account-months`);
-
-    return {
-      monthsUpdated,
-      accountsProcessed: accountsToUpdate.length,
-      month
-    };
   }
 
   async updateTrendingRiskLevels(date) {
     console.log(`🎯 Updating trending risk levels for ${date}...`);
 
-    // Use existing pool to avoid SSL timeout
-    const month = date.substring(0, 7);
+    // Use dedicated connection to avoid SSL timeout from pool exhaustion
+    const client = new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+      statement_timeout: 600000,  // 10 minutes
+      query_timeout: 600000,      // 10 minutes
+      connectionTimeoutMillis: 30000
+    });
 
-    // Get accounts that need risk level updates
-    const result = await this.pool.query(`
-      SELECT DISTINCT mm.account_id, mm.month,
-        mm.total_spend, mm.total_texts_delivered,
-        mm.total_coupons_redeemed, mm.avg_active_subs_cnt
-      FROM monthly_metrics mm
-      WHERE mm.month = $1
-    `, [month]);
+    try {
+      await client.connect();
+      console.log('🔗 Connected with dedicated client for trending risk updates');
 
-    const accountsToUpdate = result.rows;
-    console.log(`🔍 Calculating trending risk for ${accountsToUpdate.length} accounts...`);
+      const month = date.substring(0, 7);
 
-    let accountsUpdated = 0;
+      // Get accounts that need risk level updates
+      const result = await client.query(`
+        SELECT DISTINCT mm.account_id, mm.month,
+          mm.total_spend, mm.total_texts_delivered,
+          mm.total_coupons_redeemed, mm.avg_active_subs_cnt
+        FROM monthly_metrics mm
+        WHERE mm.month = $1
+      `, [month]);
 
-    for (const account of accountsToUpdate) {
-      try {
-        // Calculate trending risk level based on current month metrics
-        const riskData = this.calculateTrendingRisk(account);
+      const accountsToUpdate = result.rows;
+      console.log(`🔍 Calculating trending risk for ${accountsToUpdate.length} accounts...`);
 
-        // Update the monthly_metrics record with trending risk
-        await this.pool.query(`
-          UPDATE monthly_metrics
-          SET
-            trending_risk_level = $1,
-            trending_risk_reasons = $2
-          WHERE account_id = $3 AND month = $4
-        `, [
-          riskData.trending_risk_level,
-          riskData.trending_risk_reasons,
-          account.account_id,
-          account.month
-        ]);
+      let accountsUpdated = 0;
 
-        accountsUpdated++;
+      for (const account of accountsToUpdate) {
+        try {
+          // Calculate trending risk level based on current month metrics
+          const riskData = this.calculateTrendingRisk(account);
 
-      } catch (error) {
-        console.error(`❌ Error updating trending risk for ${account.account_id}:`, error.message);
+          // Update the monthly_metrics record with trending risk
+          await client.query(`
+            UPDATE monthly_metrics
+            SET
+              trending_risk_level = $1,
+              trending_risk_reasons = $2
+            WHERE account_id = $3 AND month = $4
+          `, [
+            riskData.trending_risk_level,
+            riskData.trending_risk_reasons,
+            account.account_id,
+            account.month
+          ]);
+
+          accountsUpdated++;
+
+        } catch (error) {
+          console.error(`❌ Error updating trending risk for ${account.account_id}:`, error.message);
+        }
       }
+
+      console.log(`✅ Trending risk levels updated for ${accountsUpdated} accounts`);
+
+      return {
+        updatedCount: accountsUpdated,
+        accountsProcessed: accountsToUpdate.length
+      };
+
+    } finally {
+      await client.end();
+      console.log('🔌 Closed dedicated client connection');
     }
-
-    console.log(`✅ Trending risk levels updated for ${accountsUpdated} accounts`);
-
-    return {
-      accountsUpdated,
-      accountsProcessed: accountsToUpdate.length,
-      month
-    };
   }
 
   calculateTrendingRisk(account) {
