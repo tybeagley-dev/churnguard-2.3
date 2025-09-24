@@ -238,10 +238,10 @@ export const getMonthlyComparisonData = async (comparisonPeriod) => {
           }
 
           const avgAccount = accountAverageMap.get(account.account_id);
-          avgAccount.total_spend += account.total_spend;
-          avgAccount.total_texts_delivered += account.total_texts_delivered;
-          avgAccount.coupons_redeemed += account.coupons_redeemed;
-          avgAccount.active_subs_cnt += account.active_subs_cnt;
+          avgAccount.total_spend += Number(account.total_spend) || 0;
+          avgAccount.total_texts_delivered += Number(account.total_texts_delivered) || 0;
+          avgAccount.coupons_redeemed += Number(account.coupons_redeemed) || 0;
+          avgAccount.active_subs_cnt += Number(account.active_subs_cnt) || 0;
         });
       });
 
@@ -256,10 +256,10 @@ export const getMonthlyComparisonData = async (comparisonPeriod) => {
 
       // Calculate averaged metrics
       const avgMetrics = averagedAccounts.reduce((acc, account) => {
-        acc.total_spend += account.total_spend;
-        acc.total_texts += account.total_texts_delivered;
-        acc.total_redemptions += account.coupons_redeemed;
-        acc.total_subscribers += account.active_subs_cnt;
+        acc.total_spend += Number(account.total_spend) || 0;
+        acc.total_texts += Number(account.total_texts_delivered) || 0;
+        acc.total_redemptions += Number(account.coupons_redeemed) || 0;
+        acc.total_subscribers += Number(account.active_subs_cnt) || 0;
         return acc;
       }, { total_spend: 0, total_texts: 0, total_redemptions: 0, total_subscribers: 0 });
 

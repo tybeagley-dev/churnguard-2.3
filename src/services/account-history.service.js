@@ -24,7 +24,16 @@ export const getAccountHistoryMonthly = async (accountId) => {
   `, [accountId]);
   const monthlyData = result.rows;
 
-  return monthlyData || [];
+  // Convert PostgreSQL numeric strings to JavaScript numbers
+  const convertedData = monthlyData.map(row => ({
+    ...row,
+    total_spend: Number(row.total_spend) || 0,
+    total_texts_delivered: Number(row.total_texts_delivered) || 0,
+    coupons_redeemed: Number(row.coupons_redeemed) || 0,
+    active_subs_cnt: Number(row.active_subs_cnt) || 0
+  }));
+
+  return convertedData || [];
 };
 
 export const getAccountHistory = async (accountId) => {
@@ -86,10 +95,10 @@ export const getAccountHistory = async (accountId) => {
     weekHistory.push({
       week_yr: weekYr,
       week_label: weekLabel,
-      total_spend: weekData?.total_spend || 0,
-      total_texts_delivered: weekData?.total_texts_delivered || 0,
-      coupons_redeemed: weekData?.coupons_redeemed || 0,
-      active_subs_cnt: Math.round(weekData?.active_subs_cnt || 0)
+      total_spend: Number(weekData?.total_spend) || 0,
+      total_texts_delivered: Number(weekData?.total_texts_delivered) || 0,
+      coupons_redeemed: Number(weekData?.coupons_redeemed) || 0,
+      active_subs_cnt: Math.round(Number(weekData?.active_subs_cnt) || 0)
     });
   }
 
