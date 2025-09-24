@@ -194,6 +194,11 @@ export default function AccountDetailModal({
                     tickFormatter={(value) => formatNumber(value)}
                     tick={{ fontSize: 12 }}
                     domain={[0, (dataMax) => {
+                      // Handle edge cases: NaN, undefined, null, or zero
+                      if (!dataMax || isNaN(dataMax) || dataMax <= 0) {
+                        return 100; // Default reasonable max for empty charts
+                      }
+
                       // Calculate a nice round number above the max value
                       const maxValue = dataMax * 1.1; // Add 10% padding
                       const magnitude = Math.pow(10, Math.floor(Math.log10(maxValue)));
