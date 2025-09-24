@@ -81,9 +81,9 @@ export class DailyProductionETLPostgreSQL {
       console.log('\n🗓️  Step 0: Check for month-end historical processing');
       const monthEndResults = await this.checkAndRunMonthEndProcessing(processDate);
 
-      // Step 1: Refresh accounts (non-destructive upsert)
-      console.log('\n🏢 Step 1: Refresh accounts from BigQuery');
-      const accountsResults = await this.refreshAccountsNonDestructive();
+      // Step 1: Update accounts table from BigQuery
+      console.log('\n👥 Step 1: Update accounts table from BigQuery');
+      const accountsResults = await this.updateAccountsTable();
 
       // Step 2: Extract from BigQuery and Load to daily_metrics
       console.log('\n📊 Step 2: BigQuery Extract & Load to daily_metrics');
@@ -127,6 +127,26 @@ export class DailyProductionETLPostgreSQL {
 
     } catch (error) {
       console.error('❌ Daily ETL Pipeline failed:', error);
+      throw error;
+    }
+  }
+
+  async updateAccountsTable() {
+    console.log(`👥 Refreshing accounts table from BigQuery...`);
+
+    try {
+      // Use the existing accounts ETL method that already works
+      const result = await this.accountsETL.populateAccounts();
+
+      console.log(`✅ Accounts table refreshed using existing ETL`);
+
+      return {
+        accountsProcessed: result.accountsProcessed || 0,
+        accountsUpdated: result.accountsUpdated || 0
+      };
+
+    } catch (error) {
+      console.error(`❌ Accounts table refresh failed:`, error);
       throw error;
     }
   }
