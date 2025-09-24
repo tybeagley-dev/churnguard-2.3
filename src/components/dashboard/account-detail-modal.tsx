@@ -193,6 +193,7 @@ export default function AccountDetailModal({
                   <YAxis
                     tickFormatter={(value) => formatNumber(value)}
                     tick={{ fontSize: 12 }}
+                    domain={['dataMin', 'dataMax']}
                   />
                   <Tooltip
                     formatter={(value, name) => {

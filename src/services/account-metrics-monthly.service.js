@@ -41,10 +41,10 @@ const getAccountMetricsDataForMonthlyPeriod = async (startDate, endDate, eligibi
 
   // Calculate aggregated totals for summary cards
   const totals = accounts.reduce((acc, account) => {
-    acc.total_spend += account.total_spend;
-    acc.total_texts_delivered += account.total_texts_delivered;
-    acc.total_coupons_redeemed += account.total_coupons_redeemed;
-    acc.total_subscribers += account.total_subscribers;
+    acc.total_spend += Number(account.total_spend) || 0;
+    acc.total_texts_delivered += Number(account.total_texts_delivered) || 0;
+    acc.total_coupons_redeemed += Number(account.total_coupons_redeemed) || 0;
+    acc.total_subscribers += Number(account.total_subscribers) || 0;
     return acc;
   }, {
     total_spend: 0,
@@ -132,10 +132,10 @@ export const getCurrentMonthBaselineData = async () => {
 
   // Calculate aggregated totals
   const totals = accounts.reduce((acc, account) => {
-    acc.total_spend += account.total_spend;
-    acc.total_texts_delivered += account.total_texts_delivered;
-    acc.total_coupons_redeemed += account.total_coupons_redeemed;
-    acc.total_subscribers += account.total_subscribers;
+    acc.total_spend += Number(account.total_spend) || 0;
+    acc.total_texts_delivered += Number(account.total_texts_delivered) || 0;
+    acc.total_coupons_redeemed += Number(account.total_coupons_redeemed) || 0;
+    acc.total_subscribers += Number(account.total_subscribers) || 0;
     return acc;
   }, {
     total_spend: 0,
