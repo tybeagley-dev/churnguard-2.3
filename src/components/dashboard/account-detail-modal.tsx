@@ -190,17 +190,19 @@ export default function AccountDetailModal({
                     height={80}
                     fontSize={12}
                   />
-                  <YAxis 
+                  <YAxis
                     tickFormatter={(value) => formatNumber(value)}
-                    fontSize={12}
+                    tick={{ fontSize: 12 }}
                   />
                   <Tooltip
                     formatter={(value, name) => {
-                      const formatValue = name === 'total_spend' ? formatCurrency(Number(value)) : formatNumber(Number(value));
-                      const displayName = name === 'total_spend' ? 'Spend' :
-                                         name === 'total_texts_delivered' ? 'Texts' :
-                                         name === 'coupons_redeemed' ? 'Redemptions' :
-                                         name === 'active_subs_cnt' ? 'Subscribers' : String(name);
+                      // Check both dataKey and Line name prop for spend formatting
+                      const isSpend = name === 'total_spend' || name === 'Spend';
+                      const formatValue = isSpend ? formatCurrency(Number(value)) : formatNumber(Number(value));
+                      const displayName = name === 'total_spend' || name === 'Spend' ? 'Spend' :
+                                         name === 'total_texts_delivered' || name === 'Texts' ? 'Texts' :
+                                         name === 'coupons_redeemed' || name === 'Redemptions' ? 'Redemptions' :
+                                         name === 'active_subs_cnt' || name === 'Subscribers' ? 'Subscribers' : String(name);
                       return [formatValue, displayName];
                     }}
                     labelFormatter={(label, payload) => {

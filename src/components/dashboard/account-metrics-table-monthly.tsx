@@ -702,7 +702,7 @@ export default function AccountMetricsTableMonthly() {
                 <>
                   <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">Comparison Period</span>
-                    <span className="text-sm font-bold text-gray-600">{comparisonMetrics.total_texts.toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{Number(comparisonMetrics.total_texts || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
@@ -727,7 +727,7 @@ export default function AccountMetricsTableMonthly() {
                 <>
                   <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">Comparison Period</span>
-                    <span className="text-sm font-bold text-gray-600">{comparisonMetrics.total_redemptions.toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{Number(comparisonMetrics.total_redemptions || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
@@ -752,7 +752,7 @@ export default function AccountMetricsTableMonthly() {
                 <>
                   <div className={`flex justify-between items-center ${timePeriod === 'current_month' && !comparisonMetrics ? 'w-full' : ''}`}>
                     <span className="text-xs text-gray-600">Comparison Period</span>
-                    <span className="text-sm font-bold text-gray-600">{comparisonMetrics.total_subscribers.toLocaleString()}</span>
+                    <span className="text-sm font-bold text-gray-600">{Number(comparisonMetrics.total_subscribers || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t">
                     <span className="text-xs text-gray-600">Delta</span>
