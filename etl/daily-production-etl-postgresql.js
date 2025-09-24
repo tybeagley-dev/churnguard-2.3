@@ -315,7 +315,7 @@ export class DailyProductionETLPostgreSQL {
       const result = await client.query(`
         SELECT DISTINCT account_id
         FROM daily_metrics
-        WHERE date >= $1 AND date < ($1::date + INTERVAL '1 month')::date
+        WHERE date::date >= $1::date AND date::date < ($1::date + INTERVAL '1 month')::date
       `, [month + '-01']);
 
       const accountsToUpdate = result.rows;
@@ -342,8 +342,8 @@ export class DailyProductionETLPostgreSQL {
               COALESCE(AVG(active_subs_cnt), 0) as avg_active_subs_cnt
             FROM daily_metrics
             WHERE account_id = $1
-              AND date >= $2 || '-01'
-              AND date < (($2 || '-01')::date + INTERVAL '1 month')::date
+              AND date::date >= ($2 || '-01')::date
+              AND date::date < (($2 || '-01')::date + INTERVAL '1 month')::date
             ON CONFLICT (account_id, month) DO UPDATE SET
               total_spend = EXCLUDED.total_spend,
               total_texts_delivered = EXCLUDED.total_texts_delivered,
