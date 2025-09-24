@@ -16,7 +16,13 @@ export class DailyProductionETLPostgreSQL {
   constructor() {
     this.pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      // Extend timeouts for long ETL operations
+      connectionTimeoutMillis: 60000, // 60 second connection timeout
+      idleTimeoutMillis: 600000, // 10 minute idle timeout (for long operations)
+      max: 10, // Maximum pool size
+      statement_timeout: 300000, // 5 minute query timeout
+      query_timeout: 300000 // 5 minute query timeout
     });
 
     this.spendETL = new DailySpendETLPostgreSQL();
