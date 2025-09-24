@@ -39,6 +39,10 @@ coverage/
 # Large SQL files in scripts directory
 scripts/*.sql
 
+# One-time CSV reports and CSM comparison scripts
+*.csv
+scripts/csv-*.js
+
 # OS generated files
 .DS_Store
 .DS_Store?
