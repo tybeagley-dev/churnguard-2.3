@@ -296,11 +296,11 @@ export class DailyProductionETLPostgreSQL {
   async aggregateToMonthlyMetrics(date) {
     console.log(`📈 Aggregating to monthly metrics for ${date}...`);
 
-    const db = await this.getDatabase();
+    // Use existing pool to avoid SSL timeout on new connections
     const month = date.substring(0, 7); // YYYY-MM format
 
     // Get all accounts that had activity this month
-    const result = await db.query(`
+    const result = await this.pool.query(`
       SELECT DISTINCT account_id
       FROM daily_metrics
       WHERE date >= $1 AND date < ($1::date + INTERVAL '1 month')::date
@@ -314,7 +314,7 @@ export class DailyProductionETLPostgreSQL {
     for (const { account_id } of accountsToUpdate) {
       try {
         // Calculate month-to-date aggregations
-        const monthlyResult = await db.query(`
+        const monthlyResult = await this.pool.query(`
           INSERT INTO monthly_metrics (
             account_id, month, month_label,
             total_spend, total_texts_delivered, total_coupons_redeemed,
@@ -361,11 +361,11 @@ export class DailyProductionETLPostgreSQL {
   async updateTrendingRiskLevels(date) {
     console.log(`🎯 Updating trending risk levels for ${date}...`);
 
-    const db = await this.getDatabase();
+    // Use existing pool to avoid SSL timeout
     const month = date.substring(0, 7);
 
     // Get accounts that need risk level updates
-    const result = await db.query(`
+    const result = await this.pool.query(`
       SELECT DISTINCT mm.account_id, mm.month,
         mm.total_spend, mm.total_texts_delivered,
         mm.total_coupons_redeemed, mm.avg_active_subs_cnt
@@ -384,7 +384,7 @@ export class DailyProductionETLPostgreSQL {
         const riskData = this.calculateTrendingRisk(account);
 
         // Update the monthly_metrics record with trending risk
-        await db.query(`
+        await this.pool.query(`
           UPDATE monthly_metrics
           SET
             trending_risk_level = $1,
