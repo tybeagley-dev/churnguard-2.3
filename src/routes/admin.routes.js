@@ -93,14 +93,14 @@ router.post('/sync-accounts', async (req, res) => {
 
     console.log(`👥 Starting Accounts ETL for ${targetDate}...`);
 
-    const { ETLTracker } = await import('../../etl/etl-tracker.js');
+    const { ETLTracker } = await import('../../etl/shared-scripts/etl-tracker.js');
     const tracker = new ETLTracker();
 
     // Validate and start step
     await tracker.validateCanRun(targetDate, 'accounts');
     await tracker.startStep(targetDate, 'accounts');
 
-    const { AccountsETLPostgreSQL } = await import('../../etl/accounts-etl-postgresql.js');
+    const { AccountsETLPostgreSQL } = await import('../../etl/postgresql-experimental/accounts-etl-postgresql.js');
     const accountsETL = new AccountsETLPostgreSQL();
 
     const result = await accountsETL.populateAccounts();
@@ -124,7 +124,7 @@ router.post('/sync-accounts', async (req, res) => {
     const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     try {
-      const { ETLTracker } = await import('../../etl/etl-tracker.js');
+      const { ETLTracker } = await import('../../etl/shared-scripts/etl-tracker.js');
       const tracker = new ETLTracker();
       await tracker.failStep(targetDate, 'accounts', error.message);
     } catch (trackingError) {
@@ -148,24 +148,22 @@ router.post('/sync-daily', async (req, res) => {
 
     console.log(`📊 Starting Daily Metrics ETL for ${targetDate}...`);
 
-    const { ETLTracker } = await import('../../etl/etl-tracker.js');
+    const { ETLTracker } = await import('../../etl/shared-scripts/etl-tracker.js');
     const tracker = new ETLTracker();
 
     // Validate and start step
     await tracker.validateCanRun(targetDate, 'daily');
     await tracker.startStep(targetDate, 'daily');
 
-    const { DailyProductionETLPostgreSQL } = await import('../../etl/daily-production-etl-postgresql.js');
-    const etl = new DailyProductionETLPostgreSQL();
+    const { DailyMetricsETLPostgresNative } = await import('../../etl/postgresql-native/daily-metrics-etl-postgres-native.js');
+    const etl = new DailyMetricsETLPostgresNative();
 
-    const result = await etl.extractAndLoadDailyMetrics(targetDate);
+    const result = await etl.processDate(targetDate);
 
     await tracker.completeStep(targetDate, 'daily', {
-      recordsProcessed: result.spend.createdCount + result.spend.updatedCount +
-                       result.texts.createdCount + result.texts.updatedCount +
-                       result.coupons.createdCount + result.coupons.updatedCount +
-                       result.subs.createdCount + result.subs.updatedCount,
-      breakdown: result
+      recordsProcessed: result.totalProcessed,
+      updatedCount: result.updatedCount,
+      createdCount: result.createdCount
     });
 
     res.json({
@@ -183,7 +181,7 @@ router.post('/sync-daily', async (req, res) => {
     const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     try {
-      const { ETLTracker } = await import('../../etl/etl-tracker.js');
+      const { ETLTracker } = await import('../../etl/shared-scripts/etl-tracker.js');
       const tracker = new ETLTracker();
       await tracker.failStep(targetDate, 'daily', error.message);
     } catch (trackingError) {
@@ -207,21 +205,25 @@ router.post('/sync-monthly', async (req, res) => {
 
     console.log(`📈 Starting Monthly Metrics ETL for ${targetDate}...`);
 
-    const { ETLTracker } = await import('../../etl/etl-tracker.js');
+    const { ETLTracker } = await import('../../etl/shared-scripts/etl-tracker.js');
     const tracker = new ETLTracker();
 
     // Validate and start step
     await tracker.validateCanRun(targetDate, 'monthly');
     await tracker.startStep(targetDate, 'monthly');
 
-    const { DailyProductionETLPostgreSQL } = await import('../../etl/daily-production-etl-postgresql.js');
-    const etl = new DailyProductionETLPostgreSQL();
+    const { MonthlyRollupETLPostgresNative } = await import('../../etl/postgresql-native/monthly-rollup-etl-postgres-native.js');
+    const etl = new MonthlyRollupETLPostgresNative();
 
-    const monthlyResult = await etl.aggregateToMonthlyMetrics(targetDate);
-    const riskResult = await etl.updateTrendingRiskLevels(targetDate);
+    // Get month from date for monthly rollup
+    const targetMonth = targetDate.slice(0, 7); // Convert YYYY-MM-DD to YYYY-MM
+    const monthlyResult = await etl.processMonth(targetMonth);
+
+    // Note: Risk analysis will be handled separately in future update
+    const riskResult = { updatedCount: 0 };
 
     await tracker.completeStep(targetDate, 'monthly', {
-      monthsUpdated: monthlyResult.monthsUpdated,
+      monthsUpdated: monthlyResult.accountsProcessed,
       trendingRiskUpdated: riskResult.updatedCount
     });
 
@@ -243,7 +245,7 @@ router.post('/sync-monthly', async (req, res) => {
     const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     try {
-      const { ETLTracker } = await import('../../etl/etl-tracker.js');
+      const { ETLTracker } = await import('../../etl/shared-scripts/etl-tracker.js');
       const tracker = new ETLTracker();
       await tracker.failStep(targetDate, 'monthly', error.message);
     } catch (trackingError) {
@@ -274,7 +276,7 @@ router.get('/sync-status', async (req, res) => {
     const monthlyResult = await db.query('SELECT COUNT(*) as count FROM monthly_metrics');
 
     // Get ETL tracking status
-    const { ETLTracker } = await import('../../etl/etl-tracker.js');
+    const { ETLTracker } = await import('../../etl/shared-scripts/etl-tracker.js');
     const tracker = new ETLTracker();
     const etlStatus = await tracker.getDateStatus(targetDate);
 
