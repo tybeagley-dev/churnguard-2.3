@@ -10,15 +10,21 @@ export const getAccountMetricsMonthly = async (req, res) => {
     const {
       baseline = 'current_month',
       comparison = null,
-      risk_level = null
+      risk_level = null,
+      status = null,
+      csm_owner = null
     } = req.query;
 
+    console.log(`📊 Account Metrics Monthly: baseline=${baseline}, comparison=${comparison}, status=${status}, csm_owner=${csm_owner}`);
 
-    // Always get current month baseline with risk data
-    const baselineData = await getCurrentMonthBaselineData();
+    // Create filters object for service functions
+    const filters = { status, csm_owner, risk_level };
 
-    // Get risk level counts for summary cards
-    const riskCounts = await getRiskLevelCounts();
+    // Always get current month baseline with risk data and filters
+    const baselineData = await getCurrentMonthBaselineData(filters);
+
+    // Get risk level counts for summary cards (filtered)
+    const riskCounts = await getRiskLevelCounts(filters);
 
     // If no comparison requested, return baseline only with risk counts
     if (!comparison) {
@@ -31,20 +37,13 @@ export const getAccountMetricsMonthly = async (req, res) => {
       });
     }
 
-    // Get comparison period data
-    const comparisonData = await getMonthlyComparisonData(comparison);
+    // Get comparison period data with same filters applied
+    const comparisonData = await getMonthlyComparisonData(comparison, filters);
 
     // Calculate deltas between baseline and comparison
     const accountsWithDeltas = calculateAccountDeltas(baselineData.accounts, comparisonData.accounts);
 
-    // Apply risk level filtering if requested
-    let filteredAccounts = accountsWithDeltas;
-    if (risk_level) {
-      // Filter accounts by trending risk level
-      filteredAccounts = accountsWithDeltas.filter(account => {
-        return account.trending_risk_level === risk_level;
-      });
-    }
+    // Note: Filtering is now handled in service functions, so accounts are already filtered
 
     const response = {
       baseline: {
@@ -57,7 +56,7 @@ export const getAccountMetricsMonthly = async (req, res) => {
         date_range: comparisonData.date_range,
         metrics: comparisonData.metrics
       },
-      accounts: filteredAccounts,
+      accounts: accountsWithDeltas,
       risk_counts: riskCounts
     };
 

@@ -2,11 +2,25 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import dotenv from 'dotenv';
-
-dotenv.config();
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load environment from project root .env file
+const projectRoot = path.join(__dirname, '../..');
+const envPath = path.join(projectRoot, '.env');
+
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else {
+  dotenv.config();
+}
+
+// Set DATABASE_URL if not already set (for PostgreSQL connection)
+if (!process.env.DATABASE_URL && process.env.EXTERNAL_DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.EXTERNAL_DATABASE_URL;
+}
 
 class CronManager {
   constructor() {

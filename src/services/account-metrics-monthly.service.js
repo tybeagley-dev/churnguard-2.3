@@ -1,10 +1,33 @@
 import { getSharedDatabase } from '../../config/database.js';
 import { ChurnGuardCalendar } from '../utils/calendar.js';
 
-const getAccountMetricsDataForMonthlyPeriod = async (startDate, endDate, eligibilityMonth, label = '') => {
+const getAccountMetricsDataForMonthlyPeriod = async (startDate, endDate, eligibilityMonth, label = '', filters = {}) => {
   const db = await getSharedDatabase();
 
   console.log(`📊 Account Metrics Monthly - ${label}: ${startDate} to ${endDate} (eligibility: ${eligibilityMonth})`);
+
+  // Build filter conditions
+  let filterConditions = '';
+  const queryParams = [eligibilityMonth, startDate, endDate, eligibilityMonth, eligibilityMonth];
+  let paramCount = 5;
+
+  if (filters.status) {
+    paramCount++;
+    filterConditions += ` AND a.status = $${paramCount}`;
+    queryParams.push(filters.status);
+  }
+
+  if (filters.csm_owner) {
+    paramCount++;
+    filterConditions += ` AND a.csm_owner = $${paramCount}`;
+    queryParams.push(filters.csm_owner);
+  }
+
+  if (filters.risk_level) {
+    paramCount++;
+    filterConditions += ` AND COALESCE(mm.trending_risk_level, mm.historical_risk_level) = $${paramCount}`;
+    queryParams.push(filters.risk_level);
+  }
 
   const result = await db.query(`
     SELECT
@@ -33,10 +56,11 @@ const getAccountMetricsDataForMonthlyPeriod = async (startDate, endDate, eligibi
         (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
         OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($5 || '-01')::date
       )
+      ${filterConditions}
     )
     GROUP BY a.account_id, a.account_name, a.status, a.csm_owner, a.launched_at
     ORDER BY a.account_name ASC
-  `, [eligibilityMonth, startDate, endDate, eligibilityMonth, eligibilityMonth]);
+  `, queryParams);
   const accounts = result.rows;
 
   // Calculate aggregated totals for summary cards
@@ -75,7 +99,7 @@ const getAccountMetricsDataForMonthlyPeriod = async (startDate, endDate, eligibi
   };
 };
 
-export const getCurrentMonthBaselineData = async () => {
+export const getCurrentMonthBaselineData = async (filters = {}) => {
   const db = await getSharedDatabase();
   const currentMonth = ChurnGuardCalendar.getCurrentMonth();
   const today = new Date();
@@ -88,6 +112,29 @@ export const getCurrentMonthBaselineData = async () => {
   const prevMonth = new Date();
   prevMonth.setMonth(prevMonth.getMonth() - 1);
   const prevMonthStr = prevMonth.toISOString().slice(0, 7);
+
+  // Build filter conditions
+  let filterConditions = '';
+  const queryParams = [currentMonth, prevMonthStr, currentMonth, currentMonth];
+  let paramCount = 4;
+
+  if (filters.status) {
+    paramCount++;
+    filterConditions += ` AND a.status = $${paramCount}`;
+    queryParams.push(filters.status);
+  }
+
+  if (filters.csm_owner) {
+    paramCount++;
+    filterConditions += ` AND a.csm_owner = $${paramCount}`;
+    queryParams.push(filters.csm_owner);
+  }
+
+  if (filters.risk_level) {
+    paramCount++;
+    filterConditions += ` AND cm.trending_risk_level = $${paramCount}`;
+    queryParams.push(filters.risk_level);
+  }
 
   // Get accounts with monthly_metrics data (current MTD from ETL)
   const result = await db.query(`
@@ -125,9 +172,10 @@ export const getCurrentMonthBaselineData = async () => {
         (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
         OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($4 || '-01')::date
       )
+      ${filterConditions}
     )
     ORDER BY a.account_name ASC
-  `, [currentMonth, prevMonthStr, currentMonth, currentMonth]);
+  `, queryParams);
   const accounts = result.rows;
 
   // Calculate aggregated totals
@@ -170,7 +218,7 @@ export const getCurrentMonthBaselineData = async () => {
   };
 };
 
-export const getMonthlyComparisonData = async (comparisonPeriod) => {
+export const getMonthlyComparisonData = async (comparisonPeriod, filters = {}) => {
   const currentMonth = ChurnGuardCalendar.getCurrentMonth();
   const today = new Date();
   const currentDay = today.getDate();
@@ -191,7 +239,8 @@ export const getMonthlyComparisonData = async (comparisonPeriod) => {
         startDate,
         endDate,
         prevMonthStr,
-        'Previous Month MTD'
+        'Previous Month MTD',
+        filters
       );
     }
 
@@ -213,7 +262,8 @@ export const getMonthlyComparisonData = async (comparisonPeriod) => {
           startDate,
           endDate,
           monthStr,
-          `Month ${monthOffset} ago MTD`
+          `Month ${monthOffset} ago MTD`,
+          filters
         );
         monthlyData.push(data);
       }
@@ -293,7 +343,8 @@ export const getMonthlyComparisonData = async (comparisonPeriod) => {
         startDate,
         endDate,
         lastYearMonthStr,
-        'Same Month Last Year MTD'
+        'Same Month Last Year MTD',
+        filters
       );
     }
 
@@ -302,7 +353,7 @@ export const getMonthlyComparisonData = async (comparisonPeriod) => {
   }
 };
 
-export const getRiskLevelCounts = async () => {
+export const getRiskLevelCounts = async (filters = {}) => {
   const db = await getSharedDatabase();
   const currentMonth = ChurnGuardCalendar.getCurrentMonth();
 
@@ -310,6 +361,25 @@ export const getRiskLevelCounts = async () => {
   const prevMonth = new Date();
   prevMonth.setMonth(prevMonth.getMonth() - 1);
   const prevMonthStr = prevMonth.toISOString().slice(0, 7);
+
+  // Build filter conditions
+  let filterConditions = '';
+  const queryParams = [currentMonth, prevMonthStr, currentMonth, currentMonth];
+  let paramCount = 4;
+
+  if (filters.status) {
+    paramCount++;
+    filterConditions += ` AND a.status = $${paramCount}`;
+    queryParams.push(filters.status);
+  }
+
+  if (filters.csm_owner) {
+    paramCount++;
+    filterConditions += ` AND a.csm_owner = $${paramCount}`;
+    queryParams.push(filters.csm_owner);
+  }
+
+  // Note: Don't filter by risk_level for counts since we want all risk level counts
 
   // Get risk level counts for eligible accounts
   const countsResult = await db.query(`
@@ -337,8 +407,9 @@ export const getRiskLevelCounts = async () => {
         (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
         OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($4 || '-01')::date
       )
+      ${filterConditions}
     )
-  `, [currentMonth, prevMonthStr, currentMonth, currentMonth]);
+  `, queryParams);
   const counts = countsResult.rows;
 
   const countsData = counts[0] || {

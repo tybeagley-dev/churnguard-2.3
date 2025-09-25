@@ -1,13 +1,36 @@
 import { getSharedDatabase } from '../../config/database.js';
 import { ChurnGuardCalendar } from '../utils/calendar.js';
 
-const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label = '', eligibilityMonth = null) => {
+const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label = '', eligibilityMonth = null, filters = {}) => {
   const db = await getSharedDatabase();
 
   // Use eligibilityMonth if provided, otherwise derive from weekStart
   const effectiveEligibilityMonth = eligibilityMonth || weekStart.substring(0, 7);
 
   console.log(`📊 Account Metrics Overview - ${label}: ${weekStart} to ${weekEnd} (eligibility: ${effectiveEligibilityMonth})`);
+
+  // Build filter conditions
+  let filterConditions = '';
+  const queryParams = [month, weekStart, weekEnd, effectiveEligibilityMonth, effectiveEligibilityMonth];
+  let paramCount = 5;
+
+  if (filters.status) {
+    paramCount++;
+    filterConditions += ` AND a.status = $${paramCount}`;
+    queryParams.push(filters.status);
+  }
+
+  if (filters.csm_owner) {
+    paramCount++;
+    filterConditions += ` AND a.csm_owner = $${paramCount}`;
+    queryParams.push(filters.csm_owner);
+  }
+
+  if (filters.risk_level) {
+    paramCount++;
+    filterConditions += ` AND COALESCE(mm.trending_risk_level, mm.historical_risk_level) = $${paramCount}`;
+    queryParams.push(filters.risk_level);
+  }
 
   const result = await db.query(`
     SELECT
@@ -45,9 +68,10 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
         (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
         OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($5 || '-01')::date
       )
+      ${filterConditions}
     )
     ORDER BY a.account_name ASC
-  `, [month, weekStart, weekEnd, effectiveEligibilityMonth, effectiveEligibilityMonth]);
+  `, queryParams);
   const accounts = result.rows;
 
   // Calculate aggregated totals for upper portion (summary cards)
@@ -86,7 +110,7 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
   };
 };
 
-export const getCurrentWeekBaselineData = async () => {
+export const getCurrentWeekBaselineData = async (filters = {}) => {
   const calendarInfo = ChurnGuardCalendar.getDateInfo();
   const weekStart = calendarInfo.week.start;
   const weekEnd = calendarInfo.week.end;
@@ -96,11 +120,13 @@ export const getCurrentWeekBaselineData = async () => {
     weekStart,
     weekEnd,
     currentMonth,
-    'Current WTD Baseline'
+    'Current WTD Baseline',
+    null,
+    filters
   );
 };
 
-export const getComparisonData = async (comparisonPeriod) => {
+export const getComparisonData = async (comparisonPeriod, filters = {}) => {
   const calendarInfo = ChurnGuardCalendar.getDateInfo();
   const currentWeekStart = new Date(calendarInfo.week.start);
   const currentWeekEnd = new Date(calendarInfo.week.end);
@@ -123,7 +149,8 @@ export const getComparisonData = async (comparisonPeriod) => {
         ChurnGuardCalendar.formatDateISO(prevWeekEnd),
         comparisonEligibilityMonth,
         'Previous WTD',
-        comparisonEligibilityMonth
+        comparisonEligibilityMonth,
+        filters
       );
     }
 
@@ -143,7 +170,8 @@ export const getComparisonData = async (comparisonPeriod) => {
           ChurnGuardCalendar.formatDateISO(weekEnd),
           eligibilityMonth,
           `Week ${weekOffset} ago`,
-          eligibilityMonth
+          eligibilityMonth,
+          filters
         );
         weeklyData.push(data);
       }
@@ -223,7 +251,8 @@ export const getComparisonData = async (comparisonPeriod) => {
         ChurnGuardCalendar.formatDateISO(lastMonthWeekEnd),
         comparisonEligibilityMonth,
         'Same WTD Last Month',
-        comparisonEligibilityMonth
+        comparisonEligibilityMonth,
+        filters
       );
     }
 
@@ -240,7 +269,8 @@ export const getComparisonData = async (comparisonPeriod) => {
         ChurnGuardCalendar.formatDateISO(lastYearWeekEnd),
         comparisonEligibilityMonth,
         'Same WTD Last Year',
-        comparisonEligibilityMonth
+        comparisonEligibilityMonth,
+        filters
       );
     }
 

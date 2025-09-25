@@ -222,11 +222,10 @@ class AccountsETLPostgreSQL {
           account_name = EXCLUDED.account_name,
           status = EXCLUDED.status,
           launched_at = EXCLUDED.launched_at,
-          csm_owner = EXCLUDED.csm_owner,
-          hubspot_id = EXCLUDED.hubspot_id,
           archived_at = EXCLUDED.archived_at,
           earliest_unit_archived_at = EXCLUDED.earliest_unit_archived_at,
           last_updated = EXCLUDED.last_updated
+          -- hubspot_id and csm_owner are intentionally excluded to protect manual overrides
       `, [
         account.account_id,
         account.account_name,

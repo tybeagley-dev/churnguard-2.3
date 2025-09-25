@@ -9,13 +9,18 @@ export const getAccountMetricsOverview = async (req, res) => {
     const {
       baseline = 'current_week',
       comparison = null,
-      risk_level = null
+      risk_level = null,
+      status = null,
+      csm_owner = null
     } = req.query;
 
-    console.log(`📊 Account Metrics Overview: baseline=${baseline}, comparison=${comparison}`);
+    console.log(`📊 Account Metrics Overview: baseline=${baseline}, comparison=${comparison}, status=${status}, csm_owner=${csm_owner}`);
 
-    // Always get current week baseline (consistent across all comparisons)
-    const baselineData = await getCurrentWeekBaselineData();
+    // Create filters object for service functions
+    const filters = { status, csm_owner, risk_level };
+
+    // Always get current week baseline with filters applied
+    const baselineData = await getCurrentWeekBaselineData(filters);
 
     // If no comparison requested, return baseline only
     if (!comparison) {
@@ -27,18 +32,13 @@ export const getAccountMetricsOverview = async (req, res) => {
       });
     }
 
-    // Get comparison period data
-    const comparisonData = await getComparisonData(comparison);
+    // Get comparison period data with same filters applied
+    const comparisonData = await getComparisonData(comparison, filters);
 
     // Calculate deltas between baseline and comparison
     const accountsWithDeltas = calculateAccountDeltas(baselineData.accounts, comparisonData.accounts);
 
-    // Apply risk level filtering if requested
-    let filteredAccounts = accountsWithDeltas;
-    if (risk_level) {
-      // TODO: Implement risk level filtering logic
-      console.log(`🎯 Filtering by risk level: ${risk_level}`);
-    }
+    // Note: Filtering is now handled in service functions, so accounts are already filtered
 
     const response = {
       baseline: {
@@ -51,7 +51,7 @@ export const getAccountMetricsOverview = async (req, res) => {
         date_range: comparisonData.date_range,
         metrics: comparisonData.metrics
       },
-      accounts: filteredAccounts
+      accounts: accountsWithDeltas
     };
 
     res.json(response);

@@ -1,0 +1,26 @@
+# ChurnGuard ETL Production Scheduling
+# Run daily ETL every day at 6:00 AM (after data is available from BigQuery)
+# Run monthly rollup on the 1st of each month at 7:00 AM
+
+# Daily ETL - runs yesterday's data processing
+0 6 * * * cd /Users/tylerbeagley/Boostly/ai/projects/ChurnGuard/churnguard-v2.3-repo && /usr/local/bin/node etl/shared-scripts/cron-manager.js daily >> /var/log/churnguard-etl.log 2>&1
+
+# Monthly rollup - runs on 1st of month after daily ETL
+0 7 1 * * cd /Users/tylerbeagley/Boostly/ai/projects/ChurnGuard/churnguard-v2.3-repo && /usr/local/bin/node etl/shared-scripts/cron-manager.js monthly >> /var/log/churnguard-etl.log 2>&1
+
+# Test ETL connections every Sunday at 5:00 AM (before daily run)
+0 5 * * 0 cd /Users/tylerbeagley/Boostly/ai/projects/ChurnGuard/churnguard-v2.3-repo && /usr/local/bin/node etl/shared-scripts/cron-manager.js test >> /var/log/churnguard-etl.log 2>&1
+
+# Installation Instructions:
+# 1. Copy this file content to your crontab:
+#    crontab production-crontab.txt
+# 2. View current crontab:
+#    crontab -l
+# 3. Create log directory:
+#    sudo mkdir -p /var/log && sudo touch /var/log/churnguard-etl.log
+# 4. Monitor logs:
+#    tail -f /var/log/churnguard-etl.log
+
+# Alternative for Render deployment (using PM2 or similar):
+# Use the node command directly for API-based scheduling
+# POST /api/admin/sync-data daily at 6:00 AM UTC
