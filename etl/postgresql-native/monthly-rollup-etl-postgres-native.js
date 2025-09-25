@@ -86,7 +86,7 @@ class MonthlyRollupETLPostgresNative {
           total_coupons_redeemed, avg_active_subs_cnt, updated_at
         )
         SELECT
-          dm.account_id,
+          a.account_id,
           $1::text as month,
           $2::text as month_label,
           SUM(dm.total_spend) as total_spend,
