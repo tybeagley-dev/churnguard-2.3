@@ -53,7 +53,7 @@ export default function AccountMetricsTable() {
   const accountsPerPage = 25;
 
   const { data: accountsResponse, isLoading } = useQuery({
-    queryKey: ['/api/account-metrics-overview', timePeriod],
+    queryKey: ['/api/account-metrics-overview', timePeriod, selectedStatus, selectedCSMs, selectedRiskLevel],
     queryFn: () => {
       // Map old period values to new dual-parameter structure
       const comparison = timePeriod === 'current_week' ? null :
@@ -63,9 +63,23 @@ export default function AccountMetricsTable() {
         timePeriod === 'same_week_last_year' ? 'vs_same_wtd_last_year' :
         null;
 
-      const url = comparison
-        ? `/api/account-metrics-overview?baseline=current_week&comparison=${comparison}`
-        : `/api/account-metrics-overview?baseline=current_week`;
+      // Build URL with filters
+      const params = new URLSearchParams();
+      params.append('baseline', 'current_week');
+      if (comparison) {
+        params.append('comparison', comparison);
+      }
+      if (selectedStatus && selectedStatus !== 'all') {
+        params.append('status', selectedStatus);
+      }
+      if (selectedCSMs && selectedCSMs.length > 0) {
+        params.append('csm_owner', selectedCSMs[0]); // Take first CSM if multiple selected
+      }
+      if (selectedRiskLevel && selectedRiskLevel !== 'all') {
+        params.append('risk_level', selectedRiskLevel);
+      }
+
+      const url = `/api/account-metrics-overview?${params.toString()}`;
 
       return fetch(url, {
         headers: {

@@ -117,12 +117,21 @@ export default function AccountMetricsTableMonthly() {
   };
 
   const { data: apiResponse, isLoading } = useQuery({
-    queryKey: ['/api/account-metrics-monthly', timePeriod],
+    queryKey: ['/api/account-metrics-monthly', timePeriod, selectedStatus, selectedCSMs, selectedRiskLevel, selectedTrendingRiskLevel],
     queryFn: async () => {
       const comparison = getComparisonParam(timePeriod);
       const params = new URLSearchParams();
       if (comparison) {
         params.append('comparison', comparison);
+      }
+      if (selectedStatus && selectedStatus !== 'all') {
+        params.append('status', selectedStatus);
+      }
+      if (selectedCSMs && selectedCSMs.length > 0) {
+        params.append('csm_owner', selectedCSMs[0]); // Take first CSM if multiple selected
+      }
+      if (selectedRiskLevel && selectedRiskLevel !== 'all') {
+        params.append('risk_level', selectedRiskLevel);
       }
       const url = `/api/account-metrics-monthly${params.toString() ? '?' + params.toString() : ''}`;
       const response = await fetch(url);
