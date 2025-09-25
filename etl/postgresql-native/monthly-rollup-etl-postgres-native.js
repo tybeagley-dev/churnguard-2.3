@@ -83,8 +83,7 @@ class MonthlyRollupETLPostgresNative {
       const insertResult = await client.query(`
         INSERT INTO monthly_metrics (
           account_id, month, month_label, total_spend, total_texts_delivered,
-          total_coupons_redeemed, avg_active_subs_cnt, days_with_activity,
-          last_updated
+          total_coupons_redeemed, avg_active_subs_cnt, updated_at
         )
         SELECT
           dm.account_id,
@@ -94,8 +93,7 @@ class MonthlyRollupETLPostgresNative {
           SUM(dm.total_texts_delivered) as total_texts_delivered,
           SUM(dm.coupons_redeemed) as total_coupons_redeemed,
           ROUND(AVG(dm.active_subs_cnt)) as avg_active_subs_cnt,
-          COUNT(DISTINCT dm.date) as days_with_activity,
-          NOW() as last_updated
+          NOW() as updated_at
         FROM accounts a
         LEFT JOIN daily_metrics dm ON a.account_id = dm.account_id
           AND TO_CHAR(dm.date::date, 'YYYY-MM') = $3
