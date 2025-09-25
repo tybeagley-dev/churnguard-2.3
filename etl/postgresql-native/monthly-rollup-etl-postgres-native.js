@@ -26,6 +26,14 @@ class MonthlyRollupETLPostgresNative {
       keepAliveInitialDelayMillis: 10000
     });
 
+    // Risk calculation thresholds (IDENTICAL to SQLite version)
+    this.MONTHLY_REDEMPTIONS_THRESHOLD = 10;
+    this.LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD = 300;
+    this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD = 35;
+    this.LOW_ACTIVITY_SUBS_THRESHOLD = 300;
+    this.SPEND_DROP_THRESHOLD = 0.40; // 40%
+    this.REDEMPTIONS_DROP_THRESHOLD = 0.50; // 50%
+
     // Test connection on startup
     this.pool.on('error', (err) => {
       console.error('❌ PostgreSQL pool error:', err);
@@ -116,6 +124,14 @@ class MonthlyRollupETLPostgresNative {
 
       console.log(`✅ Created ${insertResult.rowCount} monthly metric rows for ${monthLabel}`);
 
+      // Step 3: Calculate trending risk levels for current month only
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
+      if (targetMonth === currentMonth) {
+        console.log(`🎯 Calculating trending risk levels for current month ${monthLabel}...`);
+        const trendingResult = await this.calculateTrendingRiskForMonth(client, targetMonth);
+        console.log(`✅ Updated ${trendingResult} accounts with trending risk levels`);
+      }
+
       await client.query('COMMIT');
 
       // IDENTICAL return format to SQLite version
@@ -139,6 +155,206 @@ class MonthlyRollupETLPostgresNative {
     await this.testConnection();
     const result = await this.updateMonthlyMetrics(month);
     return result;
+  }
+
+  // Helper methods for trending risk calculation
+  calculateMonthsSinceStart(launchedAt, currentMonth) {
+    if (!launchedAt) return 0;
+    const launchDate = new Date(launchedAt);
+    const currentDate = new Date(currentMonth + '-01');
+    const monthsDiff = (currentDate.getFullYear() - launchDate.getFullYear()) * 12 +
+                      (currentDate.getMonth() - launchDate.getMonth());
+    return Math.max(0, monthsDiff);
+  }
+
+  getDaysInMonth(month) {
+    const [year, monthNum] = month.split('-');
+    return new Date(parseInt(year), parseInt(monthNum), 0).getDate();
+  }
+
+  async calculateTrendingRiskForMonth(client, targetMonth) {
+    const today = new Date();
+    const dayOfMonth = today.getDate();
+
+    // Get all monthly metrics for current month with account details
+    const accountsResult = await client.query(`
+      SELECT
+        mm.account_id, mm.month, mm.total_spend, mm.total_texts_delivered,
+        mm.total_coupons_redeemed, mm.avg_active_subs_cnt,
+        a.launched_at, a.status, a.archived_at, a.earliest_unit_archived_at
+      FROM monthly_metrics mm
+      JOIN accounts a ON mm.account_id = a.account_id
+      WHERE mm.month = $1
+      ORDER BY mm.account_id
+    `, [targetMonth]);
+
+    console.log(`📊 Processing ${accountsResult.rows.length} accounts for trending risk...`);
+
+    // Get previous month for comparison
+    const prevDate = new Date(targetMonth + '-01');
+    prevDate.setMonth(prevDate.getMonth() - 1);
+    const previousMonth = prevDate.toISOString().slice(0, 7);
+
+    let accountsUpdated = 0;
+
+    for (const account of accountsResult.rows) {
+      // Get same-day totals from previous month for apples-to-apples comparison
+      let previousMonthSameDayData = null;
+      try {
+        const previousMonthSameDay = `${previousMonth}-${dayOfMonth.toString().padStart(2, '0')}`;
+
+        const prevResult = await client.query(`
+          SELECT
+            SUM(total_spend) as total_spend,
+            SUM(coupons_redeemed) as total_coupons_redeemed,
+            AVG(active_subs_cnt) as avg_active_subs_cnt,
+            SUM(total_texts_delivered) as total_texts_delivered
+          FROM daily_metrics
+          WHERE account_id = $1
+            AND date >= $2
+            AND date <= $3
+        `, [
+          account.account_id,
+          `${previousMonth}-01`,
+          previousMonthSameDay
+        ]);
+
+        if (prevResult.rows[0] && prevResult.rows[0].total_spend !== null) {
+          previousMonthSameDayData = {
+            total_spend: parseFloat(prevResult.rows[0].total_spend) || 0,
+            total_coupons_redeemed: parseInt(prevResult.rows[0].total_coupons_redeemed) || 0,
+            avg_active_subs_cnt: parseFloat(prevResult.rows[0].avg_active_subs_cnt) || 0,
+            total_texts_delivered: parseInt(prevResult.rows[0].total_texts_delivered) || 0
+          };
+        }
+      } catch (error) {
+        // Previous month same-day data not available - normal for new accounts
+        previousMonthSameDayData = null;
+      }
+
+      // Calculate trending risk using the same algorithm as SQLite
+      const riskResult = this.calculateTrendingRiskLevel(account, dayOfMonth, account, previousMonthSameDayData);
+
+      // Update trending_risk_level and trending_risk_reasons
+      await client.query(`
+        UPDATE monthly_metrics
+        SET trending_risk_level = $1, trending_risk_reasons = $2, updated_at = NOW()
+        WHERE account_id = $3 AND month = $4
+      `, [riskResult.level, JSON.stringify(riskResult.reasons), account.account_id, targetMonth]);
+
+      accountsUpdated++;
+
+      // Progress logging
+      if (accountsUpdated % 100 === 0) {
+        console.log(`   🎯 Updated ${accountsUpdated}/${accountsResult.rows.length} accounts...`);
+      }
+    }
+
+    return accountsUpdated;
+  }
+
+  calculateTrendingRiskLevel(monthlyData, dayOfMonth, accountData, previousMonthData = null) {
+    const reasons = [];
+
+    // Check if account was archived during this specific month
+    const monthStart = new Date(monthlyData.month + '-01');
+    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+
+    const archivedDate = accountData.archived_at
+      ? new Date(accountData.archived_at)
+      : accountData.earliest_unit_archived_at
+        ? new Date(accountData.earliest_unit_archived_at)
+        : null;
+
+    // Flag 1: If archived during this specific month = high risk
+    if (archivedDate && archivedDate >= monthStart && archivedDate <= monthEnd) {
+      reasons.push('Recently Archived');
+      return { level: 'high', reasons };
+    }
+
+    // Flags 2-3: FROZEN accounts logic
+    if (accountData.status === 'FROZEN') {
+      const hasCurrentMonthTexts = monthlyData.total_texts_delivered > 0;
+      reasons.push('Frozen Account Status');
+
+      if (!hasCurrentMonthTexts) {
+        reasons.push('Frozen & Inactive');
+        return { level: 'high', reasons };
+      }
+
+      return { level: 'medium', reasons };
+    }
+
+    // Flags 4-8: LAUNCHED/ACTIVE accounts with proportional thresholds
+    const daysInMonth = this.getDaysInMonth(monthlyData.month);
+    const progressPercentage = (dayOfMonth - 1) / daysInMonth;
+
+    // Avoid division by zero for first day of month
+    if (progressPercentage <= 0) {
+      reasons.push('No flags');
+      return { level: 'low', reasons };
+    }
+
+    // Calculate proportional thresholds based on progress through month
+    const proportionalRedemptionsThreshold = this.MONTHLY_REDEMPTIONS_THRESHOLD * progressPercentage;
+    const proportionalLowEngagementRedemptionsThreshold = this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD * progressPercentage;
+
+    let flagCount = 0;
+    const monthsSinceStart = this.calculateMonthsSinceStart(accountData.launched_at, monthlyData.month);
+
+    // Flag 4: Monthly Redemptions (proportional) - 1 point
+    if (monthlyData.total_coupons_redeemed < proportionalRedemptionsThreshold) {
+      flagCount++;
+      reasons.push('Low Monthly Redemptions');
+    }
+
+    // Flag 5: Low Engagement Combo - 2 points (only after 2 months)
+    if (monthsSinceStart > 2) {
+      if (monthlyData.avg_active_subs_cnt < this.LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD &&
+          monthlyData.total_coupons_redeemed < proportionalLowEngagementRedemptionsThreshold) {
+        flagCount += 2;
+        reasons.push('Low Engagement Combo');
+      }
+    }
+
+    // Flag 6: Low Activity - 1 point
+    if (monthlyData.avg_active_subs_cnt < this.LOW_ACTIVITY_SUBS_THRESHOLD) {
+      flagCount++;
+      reasons.push('Low Activity');
+    }
+
+    // Flags 7 & 8: Drop flags using same-day comparisons (only after 3 months)
+    if (previousMonthData && monthsSinceStart >= 3) {
+      // Flag 7: Spend Drop - 1 point
+      if (previousMonthData.total_spend > 0) {
+        const spendDrop = Math.max(0, (previousMonthData.total_spend - monthlyData.total_spend) / previousMonthData.total_spend);
+        if (spendDrop >= this.SPEND_DROP_THRESHOLD) {
+          flagCount++;
+          reasons.push('Spend Drop');
+        }
+      }
+
+      // Flag 8: Redemptions Drop - 1 point
+      if (previousMonthData.total_coupons_redeemed > 0) {
+        const redemptionsDrop = Math.max(0, (previousMonthData.total_coupons_redeemed - monthlyData.total_coupons_redeemed) / previousMonthData.total_coupons_redeemed);
+        if (redemptionsDrop >= this.REDEMPTIONS_DROP_THRESHOLD) {
+          flagCount++;
+          reasons.push('Redemptions Drop');
+        }
+      }
+    }
+
+    // If no flags, add "No flags"
+    if (reasons.length === 0) {
+      reasons.push('No flags');
+    }
+
+    // Determine risk level based on flag count (same as historical)
+    let level = 'low';
+    if (flagCount >= 3) level = 'high';
+    else if (flagCount >= 1) level = 'medium';
+
+    return { level, reasons };
   }
 
   // Clean shutdown
