@@ -38,13 +38,12 @@ export function MultiSelect({
   };
 
   const getDisplayText = () => {
-    console.log('MultiSelect getDisplayText:', { value, options, maxDisplay, placeholder });
     if (value.length === 0) {
       return placeholder;
-    } else if (value.length === options.length) {
-      return "All Selected";
     } else if (value.length <= maxDisplay) {
       return value.join(", ");
+    } else if (value.length === options.length) {
+      return "All Selected";
     } else {
       return `${value.length} selected`;
     }
