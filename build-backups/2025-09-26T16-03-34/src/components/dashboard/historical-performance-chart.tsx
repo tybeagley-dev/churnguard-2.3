@@ -30,9 +30,26 @@ function formatNumber(value: number): string {
 
 export function HistoricalPerformanceChart() {
   const { data: historicalData, isLoading, error } = useQuery<HistoricalPerformanceData[]>({
-    queryKey: ['/api/bigquery/historical-performance'],
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
+    queryKey: ['/api/historical-performance'],
+    queryFn: async () => {
+      const response = await fetch('/api/historical-performance');
+      if (!response.ok) {
+        throw new Error('Failed to fetch historical performance data');
+      }
+      const data = await response.json();
+      // Map the API response to the expected component format
+      return data.map((item: any) => ({
+        month: item.period,
+        monthLabel: item.periodLabel,
+        totalSpend: item.spend_adjusted,
+        totalRedemptions: item.total_redemptions,
+        totalSubscribers: item.total_subscribers,
+        totalTexts: item.total_texts_sent,
+        accountCount: item.total_accounts
+      }));
+    },
+    staleTime: 0, // Force fresh data
+    gcTime: 0, // No cache
   });
 
   // State for toggling metrics visibility

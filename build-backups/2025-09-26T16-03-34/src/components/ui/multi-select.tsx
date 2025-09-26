@@ -38,14 +38,15 @@ export function MultiSelect({
   };
 
   const getDisplayText = () => {
+    console.log('MultiSelect getDisplayText:', { value, options, maxDisplay, placeholder });
     if (value.length === 0) {
       return placeholder;
     } else if (value.length === options.length) {
-      return "All CSMs";
+      return "All Selected";
     } else if (value.length <= maxDisplay) {
       return value.join(", ");
     } else {
-      return `${value.length} CSMs selected`;
+      return `${value.length} selected`;
     }
   };
 
@@ -74,7 +75,7 @@ export function MultiSelect({
               htmlFor="select-all"
               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
             >
-              All CSMs
+              Select All
             </label>
           </div>
         </div>

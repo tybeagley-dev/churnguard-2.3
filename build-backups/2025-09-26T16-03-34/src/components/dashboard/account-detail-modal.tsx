@@ -37,9 +37,15 @@ export default function AccountDetailModal({
   });
 
   const { data: weeklyData, isLoading } = useQuery({
-    queryKey: ['/api/bigquery/account-history', accountId],
-    queryFn: () => 
-      fetch(`/api/bigquery/account-history/${accountId}`)
+    queryKey: ['/api/account-history', accountId],
+    queryFn: () =>
+      fetch(`/api/account-history/${accountId}`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      })
         .then(res => {
           if (!res.ok) throw new Error('Failed to fetch account history');
           return res.json();
@@ -67,18 +73,8 @@ export default function AccountDetailModal({
     return new Intl.NumberFormat('en-US').format(value);
   };
 
-  const formatWeekLabel = (weekYr: string) => {
-    // Convert "2024W45" to "Week 45, 2024"
-    const year = weekYr.substring(0, 4);
-    const week = weekYr.substring(5);
-    return `Week ${week}, ${year}`;
-  };
-
-  // Prepare chart data
-  const chartData = weeklyData?.map((item: WeeklyMetric) => ({
-    ...item,
-    week_label: formatWeekLabel(item.week_yr),
-  })) || [];
+  // Prepare chart data - use backend's week_label directly
+  const chartData = weeklyData || [];
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -104,28 +100,28 @@ export default function AccountDetailModal({
               <div className="bg-purple-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-purple-800 mb-2">Total Spend (12 Weeks)</div>
                 <div className="text-lg font-bold text-purple-600">
-                  {formatCurrency(chartData.reduce((sum, item) => sum + (item.total_spend || 0), 0))}
+                  {formatCurrency(chartData.reduce((sum, item) => sum + (parseFloat(item.total_spend) || 0), 0))}
                 </div>
               </div>
               
               <div className="bg-orange-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-orange-800 mb-2">Total Texts (12 Weeks)</div>
                 <div className="text-lg font-bold text-orange-600">
-                  {formatNumber(chartData.reduce((sum, item) => sum + (item.total_texts_delivered || 0), 0))}
+                  {formatNumber(chartData.reduce((sum, item) => sum + (parseInt(item.total_texts_delivered) || 0), 0))}
                 </div>
               </div>
               
               <div className="bg-green-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-green-800 mb-2">Total Redemptions (12 Weeks)</div>
                 <div className="text-lg font-bold text-green-600">
-                  {formatNumber(chartData.reduce((sum, item) => sum + (item.coupons_redeemed || 0), 0))}
+                  {formatNumber(chartData.reduce((sum, item) => sum + (parseInt(item.coupons_redeemed) || 0), 0))}
                 </div>
               </div>
               
               <div className="bg-blue-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-blue-800 mb-2">Avg Subscribers (12 Weeks)</div>
                 <div className="text-lg font-bold text-blue-600">
-                  {formatNumber(Math.round(chartData.reduce((sum, item) => sum + (item.active_subs_cnt || 0), 0) / Math.max(chartData.length, 1)))}
+                  {formatNumber(Math.round(chartData.reduce((sum, item) => sum + (parseInt(item.active_subs_cnt) || 0), 0) / Math.max(chartData.length, 1)))}
                 </div>
               </div>
             </div>
@@ -183,29 +179,50 @@ export default function AccountDetailModal({
                 </div>
               </div>
               
-              <ResponsiveContainer width="100%" height={400}>
+              <div className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="week_label" 
+                  <XAxis
+                    dataKey="week_yr"
                     angle={-45}
                     textAnchor="end"
                     height={80}
                     fontSize={12}
                   />
-                  <YAxis 
+                  <YAxis
                     tickFormatter={(value) => formatNumber(value)}
-                    fontSize={12}
+                    tick={{ fontSize: 12 }}
+                    domain={[0, (dataMax) => {
+                      // Handle edge cases: NaN, undefined, null, or zero
+                      if (!dataMax || isNaN(dataMax) || dataMax <= 0) {
+                        return 100; // Default reasonable max for empty charts
+                      }
+
+                      // Calculate a nice round number above the max value
+                      const maxValue = dataMax * 1.1; // Add 10% padding
+                      const magnitude = Math.pow(10, Math.floor(Math.log10(maxValue)));
+                      return Math.ceil(maxValue / magnitude) * magnitude;
+                    }]}
+                    tickCount={6}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={(value, name) => {
-                      const formatValue = name === 'total_spend' ? formatCurrency(Number(value)) : formatNumber(Number(value));
-                      const displayName = name === 'total_spend' ? 'Spend' :
-                                         name === 'total_texts_delivered' ? 'Texts' :
-                                         name === 'coupons_redeemed' ? 'Redemptions' : 'Subscribers';
+                      // Check both dataKey and Line name prop for spend formatting
+                      const isSpend = name === 'total_spend' || name === 'Spend';
+                      const formatValue = isSpend ? formatCurrency(Number(value)) : formatNumber(Number(value));
+                      const displayName = name === 'total_spend' || name === 'Spend' ? 'Spend' :
+                                         name === 'total_texts_delivered' || name === 'Texts' ? 'Texts' :
+                                         name === 'coupons_redeemed' || name === 'Redemptions' ? 'Redemptions' :
+                                         name === 'active_subs_cnt' || name === 'Subscribers' ? 'Subscribers' : String(name);
                       return [formatValue, displayName];
                     }}
-                    labelFormatter={(label) => label}
+                    labelFormatter={(label, payload) => {
+                      if (payload && payload[0] && payload[0].payload) {
+                        return payload[0].payload.week_label;
+                      }
+                      return label;
+                    }}
                   />
                   <Legend />
                   
@@ -253,7 +270,8 @@ export default function AccountDetailModal({
                     />
                   )}
                 </LineChart>
-              </ResponsiveContainer>
+                </ResponsiveContainer>
+              </div>
             </div>
 
             {/* Weekly Data Table */}
@@ -273,7 +291,7 @@ export default function AccountDetailModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {chartData.map((item, index) => (
+                    {[...chartData].reverse().map((item, index) => (
                       <tr key={item.week_yr} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
                         <td className="p-3 font-medium">{item.week_label}</td>
                         <td className="p-3 text-right font-mono">{formatCurrency(item.total_spend || 0)}</td>

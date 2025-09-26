@@ -92,7 +92,7 @@ export class DailyProductionETL {
       console.log('\n📈 Step 3: Aggregate to monthly_metrics');
       const monthlyResults = await this.aggregateToMonthlyMetrics(processDate);
       
-      // Step 4: Update trending risk levels (proportional analysis)
+      // Step 4: Update risk levels (proportional analysis)
       console.log('\n🎯 Step 4: Update trending risk levels');
       const riskResults = await this.updateTrendingRiskLevels(processDate);
       

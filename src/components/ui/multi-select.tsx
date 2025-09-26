@@ -38,6 +38,7 @@ export function MultiSelect({
   };
 
   const getDisplayText = () => {
+    console.log('MultiSelect getDisplayText:', { value, options, maxDisplay, placeholder });
     if (value.length === 0) {
       return placeholder;
     } else if (value.length === options.length) {

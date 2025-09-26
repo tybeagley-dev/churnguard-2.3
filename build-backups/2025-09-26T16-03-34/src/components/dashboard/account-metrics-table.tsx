@@ -21,6 +21,7 @@ interface AccountMetric {
   latest_activity?: string;
   risk_score?: number;
   risk_level?: string;
+  status_label?: string;
   // Delta fields for comparison periods
   spend_delta?: number;
   texts_delta?: number;
@@ -51,11 +52,47 @@ export default function AccountMetricsTable() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const accountsPerPage = 25;
 
-  const { data: accounts, isLoading } = useQuery({
-    queryKey: ['/api/bigquery/accounts', timePeriod],
-    queryFn: () => fetch(`/api/bigquery/accounts?period=${timePeriod}`).then(res => res.json()),
+  const { data: accountsResponse, isLoading } = useQuery({
+    queryKey: ['/api/account-metrics-overview', timePeriod, selectedStatus, selectedCSMs, selectedRiskLevel],
+    queryFn: () => {
+      // Map old period values to new dual-parameter structure
+      const comparison = timePeriod === 'current_week' ? null :
+        timePeriod === 'previous_week' ? 'vs_previous_wtd' :
+        timePeriod === 'six_week_average' ? 'vs_6_week_avg' :
+        timePeriod === 'same_week_last_month' ? 'vs_same_wtd_last_month' :
+        timePeriod === 'same_week_last_year' ? 'vs_same_wtd_last_year' :
+        null;
+
+      // Build URL with filters
+      const params = new URLSearchParams();
+      params.append('baseline', 'current_week');
+      if (comparison) {
+        params.append('comparison', comparison);
+      }
+      if (selectedStatus && selectedStatus !== 'all') {
+        params.append('status', selectedStatus);
+      }
+      if (selectedCSMs && selectedCSMs.length > 0) {
+        params.append('csm_owner', selectedCSMs[0]); // Take first CSM if multiple selected
+      }
+      if (selectedRiskLevel && selectedRiskLevel !== 'all') {
+        params.append('risk_level', selectedRiskLevel);
+      }
+
+      const url = `/api/account-metrics-overview?${params.toString()}`;
+
+      return fetch(url, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      }).then(res => res.json());
+    },
     enabled: true
   });
+
+  // Extract accounts from new response structure - use union dataset when available
+  const accounts = accountsResponse?.accounts || accountsResponse?.baseline?.accounts || [];
 
 
   const handleSort = (field: SortField) => {
@@ -163,10 +200,10 @@ export default function AccountMetricsTable() {
     // Calculate summary statistics for filtered data (comparison period)
     const summaryStats = filteredAccounts.reduce((acc, account) => {
       acc.totalAccounts += 1;
-      acc.totalSpend += account.total_spend || 0;
-      acc.totalRedemptions += account.coupons_redeemed || 0;
-      acc.totalTexts += account.total_texts_delivered || 0;
-      acc.totalSubscribers += account.active_subs_cnt || 0;
+      acc.totalSpend += parseFloat(account.total_spend) || 0;
+      acc.totalRedemptions += parseInt(account.coupons_redeemed) || 0;
+      acc.totalTexts += parseInt(account.total_texts_delivered) || 0;
+      acc.totalSubscribers += parseInt(account.active_subs_cnt) || 0;
       
       // Count risk levels
       const riskLevel = account.risk_level || 'low';
@@ -186,7 +223,7 @@ export default function AccountMetricsTable() {
       totalSubscribers: 0,
     });
 
-    // Calculate current week statistics and deltas (for comparison views)
+    // Use backend-provided metrics for summary cards
     let currentWeekStats = { ...summaryStats };
     let calculatedDeltas = {
       spendDelta: 0,
@@ -195,33 +232,26 @@ export default function AccountMetricsTable() {
       subscribersDelta: 0,
     };
 
-    if (timePeriod !== 'current_week') {
-      // For comparison periods, calculate current week totals and deltas
-      currentWeekStats = filteredAccounts.reduce((acc, account) => {
-        acc.totalSpend += account.current_total_spend || 0;
-        acc.totalRedemptions += account.current_coupons_redeemed || 0;
-        acc.totalTexts += account.current_total_texts_delivered || 0;
-        acc.totalSubscribers += account.current_active_subs_cnt || 0;
-        return acc;
-      }, {
+    if (timePeriod !== 'current_week' && accountsResponse?.baseline && accountsResponse?.comparison) {
+      // Use pre-calculated metrics from backend API response
+      currentWeekStats = {
         totalAccounts: summaryStats.totalAccounts,
         highRiskCount: summaryStats.highRiskCount,
         medRiskCount: summaryStats.medRiskCount,
         lowRiskCount: summaryStats.lowRiskCount,
-        totalSpend: 0,
-        totalRedemptions: 0,
-        totalTexts: 0,
-        totalSubscribers: 0,
-      });
+        totalSpend: accountsResponse.baseline.metrics.total_spend,
+        totalTexts: accountsResponse.baseline.metrics.total_texts,
+        totalRedemptions: accountsResponse.baseline.metrics.total_redemptions,
+        totalSubscribers: accountsResponse.baseline.metrics.total_subscribers,
+      };
 
-      // Calculate deltas from individual account deltas
-      calculatedDeltas = filteredAccounts.reduce((acc, account) => {
-        acc.spendDelta += (account.current_total_spend || 0) - (account.total_spend || 0);
-        acc.textsDelta += (account.current_total_texts_delivered || 0) - (account.total_texts_delivered || 0);
-        acc.redemptionsDelta += (account.current_coupons_redeemed || 0) - (account.coupons_redeemed || 0);
-        acc.subscribersDelta += (account.current_active_subs_cnt || 0) - (account.active_subs_cnt || 0);
-        return acc;
-      }, { spendDelta: 0, textsDelta: 0, redemptionsDelta: 0, subscribersDelta: 0 });
+      // Calculate deltas from backend metrics
+      calculatedDeltas = {
+        spendDelta: accountsResponse.baseline.metrics.total_spend - accountsResponse.comparison.metrics.total_spend,
+        textsDelta: accountsResponse.baseline.metrics.total_texts - accountsResponse.comparison.metrics.total_texts,
+        redemptionsDelta: accountsResponse.baseline.metrics.total_redemptions - accountsResponse.comparison.metrics.total_redemptions,
+        subscribersDelta: accountsResponse.baseline.metrics.total_subscribers - accountsResponse.comparison.metrics.total_subscribers,
+      };
     }
 
 
@@ -487,8 +517,8 @@ export default function AccountMetricsTable() {
               <div className="text-sm font-bold text-purple-800 mb-3">Total Spend</div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-600">Current Week</span>
-                  <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(currentWeekStats.totalSpend)}</span>
+                  <span className="text-xs text-gray-600">{timePeriod === 'current_week' ? 'Current Week' : 'Current Period'}</span>
+                  <span className="text-sm font-bold text-purple-600">{formatCurrencyWhole(summaryStats.totalSpend)}</span>
                 </div>
                 {timePeriod !== 'current_week' && (
                   <>
@@ -512,8 +542,8 @@ export default function AccountMetricsTable() {
               <div className="text-sm font-bold text-orange-800 mb-3">Total Texts</div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-600">Current Week</span>
-                  <span className="text-sm font-bold text-orange-600">{currentWeekStats.totalTexts.toLocaleString()}</span>
+                  <span className="text-xs text-gray-600">{timePeriod === 'current_week' ? 'Current Week' : 'Current Period'}</span>
+                  <span className="text-sm font-bold text-orange-600">{summaryStats.totalTexts.toLocaleString()}</span>
                 </div>
                 {timePeriod !== 'current_week' && (
                   <>
@@ -537,8 +567,8 @@ export default function AccountMetricsTable() {
               <div className="text-sm font-bold text-green-800 mb-3">Total Redemptions</div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-600">Current Week</span>
-                  <span className="text-sm font-bold text-green-600">{currentWeekStats.totalRedemptions.toLocaleString()}</span>
+                  <span className="text-xs text-gray-600">{timePeriod === 'current_week' ? 'Current Week' : 'Current Period'}</span>
+                  <span className="text-sm font-bold text-green-600">{summaryStats.totalRedemptions.toLocaleString()}</span>
                 </div>
                 {timePeriod !== 'current_week' && (
                   <>
@@ -562,8 +592,8 @@ export default function AccountMetricsTable() {
               <div className="text-sm font-bold text-blue-800 mb-3">Total Subscribers</div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-600">Current Week</span>
-                  <span className="text-sm font-bold text-blue-600">{currentWeekStats.totalSubscribers.toLocaleString()}</span>
+                  <span className="text-xs text-gray-600">{timePeriod === 'current_week' ? 'Current Week' : 'Current Period'}</span>
+                  <span className="text-sm font-bold text-blue-600">{summaryStats.totalSubscribers.toLocaleString()}</span>
                 </div>
                 {timePeriod !== 'current_week' && (
                   <>
@@ -593,6 +623,9 @@ export default function AccountMetricsTable() {
                     <SortableHeader field="name" className="text-left">Account</SortableHeader>
                     <SortableHeader field="csm" className="text-left">CSM</SortableHeader>
                     <SortableHeader field="status" className="text-left">Status</SortableHeader>
+                    {timePeriod !== 'current_week' && (
+                      <th className="p-3 font-medium text-left">Change Label</th>
+                    )}
                     <SortableHeader field="total_spend" className="text-right">Total Spend</SortableHeader>
                     {timePeriod !== 'current_week' && (
                       <SortableHeader field="spend_delta" className="text-right">Spend Δ</SortableHeader>
@@ -630,8 +663,17 @@ export default function AccountMetricsTable() {
                           {account.status}
                         </Badge>
                       </td>
+                      {timePeriod !== 'current_week' && (
+                        <td className="p-3">
+                          {account.status_label && (
+                            <Badge variant="outline" className="text-xs">
+                              {account.status_label}
+                            </Badge>
+                          )}
+                        </td>
+                      )}
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatCurrencyWhole(timePeriod === 'current_week' ? account.total_spend : (account.current_total_spend || 0))}
+                        {formatCurrencyWhole(account.total_spend)}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">
@@ -639,7 +681,7 @@ export default function AccountMetricsTable() {
                         </td>
                       )}
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatNumber(timePeriod === 'current_week' ? account.total_texts_delivered : (account.current_total_texts_delivered || 0))}
+                        {formatNumber(account.total_texts_delivered)}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">
@@ -647,7 +689,7 @@ export default function AccountMetricsTable() {
                         </td>
                       )}
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatNumber(timePeriod === 'current_week' ? account.coupons_redeemed : (account.current_coupons_redeemed || 0))}
+                        {formatNumber(account.coupons_redeemed)}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">
@@ -655,7 +697,7 @@ export default function AccountMetricsTable() {
                         </td>
                       )}
                       <td className="p-3 text-right font-mono text-sm">
-                        {formatNumber(timePeriod === 'current_week' ? account.active_subs_cnt : (account.current_active_subs_cnt || 0))}
+                        {formatNumber(account.active_subs_cnt)}
                       </td>
                       {timePeriod !== 'current_week' && (
                         <td className="p-3 text-right font-mono text-sm">

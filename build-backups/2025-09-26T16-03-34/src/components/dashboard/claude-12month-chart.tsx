@@ -10,7 +10,7 @@ export interface Claude12MonthData {
   total_accounts: number;
   accounts_below_minimum: number;
   spend_original: number;
-  spend_adjusted: number;
+  total_spend: number;
   spend_adjustment: number;
   total_redemptions: number;
   total_subscribers: number;
@@ -44,7 +44,7 @@ function formatLargeNumber(value: number): string {
 
 export function Claude12MonthChart() {
   const [selectedMetrics, setSelectedMetrics] = useState({
-    spend_adjusted: true,
+    total_spend: true,
     total_accounts: true,
     total_redemptions: true,
     total_subscribers: true,
@@ -52,9 +52,16 @@ export function Claude12MonthChart() {
   });
 
   const { data: claude12MonthData, isLoading, error } = useQuery<Claude12MonthData[]>({
-    queryKey: ['/api/bigquery/claude-12month'],
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    gcTime: 20 * 60 * 1000, // 20 minutes
+    queryKey: ['/api/historical-performance'],
+    queryFn: async () => {
+      const response = await fetch(`/api/historical-performance`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch claude 12-month data');
+      }
+      return response.json();
+    },
+    staleTime: 0, // Force fresh data
+    gcTime: 0, // No cache
     retry: 1,
     retryDelay: 5000,
     refetchOnWindowFocus: false,
@@ -127,7 +134,7 @@ export function Claude12MonthChart() {
   const totalAccounts = Math.max(...claude12MonthData.map(d => d.total_accounts)); // Get peak account count
 
   const metrics = [
-    { key: 'spend_adjusted', label: 'Spend Adjusted', color: '#8b5cf6', bgColor: 'bg-purple-50', textColor: 'text-purple-600' },
+    { key: 'total_spend', label: 'Total Spend', color: '#8b5cf6', bgColor: 'bg-purple-50', textColor: 'text-purple-600' },
     { key: 'total_accounts', label: 'Total Accounts', color: '#f97316', bgColor: 'bg-orange-50', textColor: 'text-orange-600' },
     { key: 'total_redemptions', label: 'Total Redemptions', color: '#16a34a', bgColor: 'bg-green-50', textColor: 'text-green-600' },
     { key: 'total_subscribers', label: 'Total Subscribers', color: '#2563eb', bgColor: 'bg-blue-50', textColor: 'text-blue-600' },
@@ -140,9 +147,9 @@ export function Claude12MonthChart() {
       return (
         <div className="bg-white border rounded-lg shadow-lg p-3">
           <p className="font-semibold">{data.month_label}</p>
-          {selectedMetrics.spend_adjusted && (
+          {selectedMetrics.total_spend && (
             <p className="text-purple-600">
-              Spend Adjusted: {formatCurrency(data.spend_adjusted)}
+              Total Spend: {formatCurrency(data.total_spend)}
             </p>
           )}
           {selectedMetrics.total_accounts && (
@@ -226,10 +233,10 @@ export function Claude12MonthChart() {
               />
               <Tooltip content={<CustomTooltip />} />
               
-              {selectedMetrics.spend_adjusted && (
+              {selectedMetrics.total_spend && (
                 <Line
                   type="monotone"
-                  dataKey="spend_adjusted"
+                  dataKey="total_spend"
                   stroke="#8b5cf6"
                   strokeWidth={3}
                   dot={{ fill: "#8b5cf6", strokeWidth: 2, r: 4 }}

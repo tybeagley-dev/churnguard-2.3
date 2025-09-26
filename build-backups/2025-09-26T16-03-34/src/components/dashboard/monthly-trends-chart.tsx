@@ -26,7 +26,7 @@ export default function MonthlyTrendsChart() {
     },
     enabled: true,
     retry: 1,
-    staleTime: 30000
+    staleTime: 0
   });
 
   const colors = {
@@ -38,9 +38,10 @@ export default function MonthlyTrendsChart() {
   // Custom tooltip content that includes totals
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      // Calculate total from all payload values
-      const total = payload.reduce((sum: number, entry: any) => sum + (entry.value || 0), 0);
-      
+      // Use server-calculated total from the data
+      const dataPoint = payload[0]?.payload;
+      const total = dataPoint?.total || 0;
+
       return (
         <div className="bg-white border border-gray-300 rounded-md p-3 shadow-lg">
           <p className="text-gray-900 font-bold mb-2">{label}</p>
