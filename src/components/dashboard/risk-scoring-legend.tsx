@@ -27,7 +27,6 @@ export default function RiskScoringLegend() {
       
       if (response.ok) {
         const result = await response.json();
-        console.log('HubSpot sync completed:', result);
       }
     } catch (error) {
       console.error('HubSpot sync failed:', error);

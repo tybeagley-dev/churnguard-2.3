@@ -324,12 +324,6 @@ export default function AccountMetricsTable() {
     );
   }
 
-  // Debug logging
-  console.log('WEEKLY COMPONENT DEBUG:', {
-    timePeriod,
-    shouldShowDeltas: timePeriod !== 'current_week',
-    sampleAccount: accounts?.[0]
-  });
 
   if (!accounts || accounts.length === 0) {
     return (
