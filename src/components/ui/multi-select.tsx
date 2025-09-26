@@ -12,40 +12,58 @@ interface MultiSelectProps {
   maxDisplay?: number;
 }
 
-export function MultiSelect({ 
-  options, 
-  value, 
-  onChange, 
+export function MultiSelect({
+  options,
+  value,
+  onChange,
   placeholder = "Select items...",
-  maxDisplay = 2 
+  maxDisplay = 2
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
+  const [localValue, setLocalValue] = useState(value);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync local value with prop value when it changes externally
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const debouncedOnChange = (newValue: string[]) => {
+    setLocalValue(newValue); // Update local state immediately for UI
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    timeoutRef.current = setTimeout(() => {
+      onChange(newValue); // Call parent onChange after delay
+    }, 500); // 500ms delay to allow multiple selections
+  };
 
   const handleSelectAll = () => {
-    if (value.length === options.length) {
-      onChange([]);
+    if (localValue.length === options.length) {
+      debouncedOnChange([]);
     } else {
-      onChange(options);
+      debouncedOnChange(options);
     }
   };
 
   const handleToggleOption = (option: string) => {
-    if (value.includes(option)) {
-      onChange(value.filter(v => v !== option));
+    if (localValue.includes(option)) {
+      debouncedOnChange(localValue.filter(v => v !== option));
     } else {
-      onChange([...value, option]);
+      debouncedOnChange([...localValue, option]);
     }
   };
 
   const getDisplayText = () => {
-    if (value.length === 0) {
+    if (localValue.length === 0) {
       return placeholder;
-    } else if (value.length <= maxDisplay) {
-      return value.join(", ");
-    } else if (value.length === options.length) {
+    } else if (localValue.length <= maxDisplay) {
+      return localValue.join(", ");
+    } else if (localValue.length === options.length) {
       return "All Selected";
     } else {
-      return `${value.length} selected`;
+      return `${localValue.length} selected`;
     }
   };
 
@@ -68,7 +86,7 @@ export function MultiSelect({
           <div className="flex items-center space-x-2">
             <Checkbox
               id="select-all"
-              checked={value.length === options.length}
+              checked={localValue.length === options.length}
               onCheckedChange={(checked) => {
                 handleSelectAll();
               }}
@@ -99,7 +117,7 @@ export function MultiSelect({
             >
               <Checkbox
                 id={option}
-                checked={value.includes(option)}
+                checked={localValue.includes(option)}
                 onCheckedChange={(checked) => {
                   handleToggleOption(option);
                 }}
