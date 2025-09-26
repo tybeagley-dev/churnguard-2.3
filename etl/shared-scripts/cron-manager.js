@@ -26,7 +26,6 @@ class CronManager {
   constructor() {
     this.etlBasePath = path.join(__dirname, '..');
     this.logLevel = process.env.ETL_LOG_LEVEL || 'info';
-    this.slackWebhook = process.env.SLACK_WEBHOOK_URL; // Optional: for notifications
   }
 
   log(level, message) {
@@ -86,22 +85,6 @@ class CronManager {
     });
   }
 
-  async sendSlackNotification(message, isError = false) {
-    if (!this.slackWebhook) return;
-
-    const payload = {
-      text: isError ? `🚨 ChurnGuard ETL Error: ${message}` : `✅ ChurnGuard ETL: ${message}`,
-      username: 'ChurnGuard ETL Bot',
-      channel: '#churnguard-alerts'
-    };
-
-    try {
-      // Note: This would require a fetch implementation or http module
-      this.log('debug', `Would send Slack notification: ${message}`);
-    } catch (error) {
-      this.log('warn', `Failed to send Slack notification: ${error.message}`);
-    }
-  }
 
   // Get yesterday's date in YYYY-MM-DD format
   getYesterdayDate() {
@@ -128,13 +111,11 @@ class CronManager {
       ]);
 
       this.log('info', `✅ Daily ETL completed successfully for ${targetDate}`);
-      await this.sendSlackNotification(`Daily ETL completed for ${targetDate}`);
 
       return { success: true, date: targetDate };
 
     } catch (error) {
       this.log('error', `❌ Daily ETL failed for ${targetDate}: ${error.message}`);
-      await this.sendSlackNotification(`Daily ETL failed for ${targetDate}: ${error.message}`, true);
       throw error;
     }
   }
@@ -152,13 +133,11 @@ class CronManager {
       ]);
 
       this.log('info', `✅ Monthly rollup completed successfully for ${targetMonth}`);
-      await this.sendSlackNotification(`Monthly rollup completed for ${targetMonth}`);
 
       return { success: true, month: targetMonth };
 
     } catch (error) {
       this.log('error', `❌ Monthly rollup failed for ${targetMonth}: ${error.message}`);
-      await this.sendSlackNotification(`Monthly rollup failed for ${targetMonth}: ${error.message}`, true);
       throw error;
     }
   }
@@ -184,13 +163,11 @@ class CronManager {
       ]);
 
       this.log('info', `✅ Historical monthly rollup completed successfully for ${targetMonth}`);
-      await this.sendSlackNotification(`Historical monthly rollup completed for ${targetMonth}`);
 
       return { success: true, month: targetMonth };
 
     } catch (error) {
       this.log('error', `❌ Historical monthly rollup failed for ${targetMonth}: ${error.message}`);
-      await this.sendSlackNotification(`Historical monthly rollup failed for ${targetMonth}: ${error.message}`, true);
       throw error;
     }
   }
@@ -238,6 +215,25 @@ class CronManager {
       throw error;
     }
   }
+
+  // HubSpot sync pipeline
+  async runHubSpotSync() {
+    this.log('info', `🔄 Starting HubSpot sync`);
+
+    try {
+      // Run HubSpot sync script
+      await this.runCommand('node', [
+        path.join(this.etlBasePath, 'postgresql-native/hubspot-sync.js')
+      ]);
+
+      this.log('info', `✅ HubSpot sync completed successfully`);
+      return { success: true };
+
+    } catch (error) {
+      this.log('error', `❌ HubSpot sync failed: ${error.message}`);
+      throw error;
+    }
+  }
 }
 
 // CLI Interface
@@ -278,6 +274,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         .catch(() => process.exit(1));
       break;
 
+    case 'hubspot':
+      cronManager.runHubSpotSync()
+        .then(() => process.exit(0))
+        .catch(() => process.exit(1));
+      break;
+
     default:
       console.error(`❌ Usage: node cron-manager.js <command> [date]
 
@@ -287,6 +289,7 @@ Commands:
   historical [YYYY-MM]    Run historical monthly rollup for previous month (defaults to previous month)
   test [YYYY-MM-DD]       Test ETL connections and dry run
   full [YYYY-MM-DD]       Run full pipeline (daily + current month rollup)
+  hubspot                 Sync account risk data to HubSpot
 
 Examples:
   node cron-manager.js daily
@@ -295,10 +298,10 @@ Examples:
   node cron-manager.js historical 2025-08
   node cron-manager.js test
   node cron-manager.js full
+  node cron-manager.js hubspot
 
 Environment Variables:
   ETL_LOG_LEVEL=debug|info|warn|error (default: info)
-  SLACK_WEBHOOK_URL=<webhook> (optional: for notifications)
 `);
       process.exit(1);
   }
