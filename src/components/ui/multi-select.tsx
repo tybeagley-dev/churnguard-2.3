@@ -10,6 +10,7 @@ interface MultiSelectProps {
   onChange: (value: string[]) => void;
   placeholder?: string;
   maxDisplay?: number;
+  keepOpenAfterChange?: boolean;
 }
 
 export function MultiSelect({
@@ -17,7 +18,8 @@ export function MultiSelect({
   value,
   onChange,
   placeholder = "Select items...",
-  maxDisplay = 2
+  maxDisplay = 2,
+  keepOpenAfterChange = false
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [localValue, setLocalValue] = useState(value);
@@ -26,7 +28,12 @@ export function MultiSelect({
   // Sync local value with prop value when it changes externally
   useEffect(() => {
     setLocalValue(value);
-  }, [value]);
+
+    // Keep dropdown open after reload if keepOpenAfterChange is true and there are selections
+    if (keepOpenAfterChange && value.length > 0) {
+      setOpen(true);
+    }
+  }, [value, keepOpenAfterChange]);
 
   const debouncedOnChange = (newValue: string[]) => {
     setLocalValue(newValue); // Update local state immediately for UI
@@ -36,7 +43,7 @@ export function MultiSelect({
     }
     timeoutRef.current = setTimeout(() => {
       onChange(newValue); // Call parent onChange after delay
-    }, 500); // 500ms delay to allow multiple selections
+    }, 200); // 200ms delay to allow multiple selections
   };
 
   const handleSelectAll = () => {

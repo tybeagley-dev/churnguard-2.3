@@ -587,6 +587,8 @@ export default function AccountMetricsTableMonthly() {
                 value={selectedCSMs}
                 onChange={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
                 placeholder="All CSMs"
+                keepOpenAfterChange={true}
+                maxDisplay={3}
               />
             </div>
 
