@@ -69,11 +69,18 @@ export function MultiSelect({
             <Checkbox
               id="select-all"
               checked={value.length === options.length}
-              onCheckedChange={handleSelectAll}
+              onCheckedChange={(checked) => {
+                handleSelectAll();
+              }}
             />
             <label
               htmlFor="select-all"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSelectAll();
+              }}
             >
               Select All
             </label>
@@ -93,13 +100,18 @@ export function MultiSelect({
               <Checkbox
                 id={option}
                 checked={value.includes(option)}
-                onCheckedChange={() => handleToggleOption(option)}
-                onClick={(e) => e.stopPropagation()}
+                onCheckedChange={(checked) => {
+                  handleToggleOption(option);
+                }}
               />
               <label
                 htmlFor={option}
                 className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleToggleOption(option);
+                }}
               >
                 {option}
               </label>
