@@ -83,16 +83,22 @@ export function MultiSelect({
             <div
               key={option}
               className="flex items-center space-x-2 p-2 hover:bg-gray-50 cursor-pointer"
-              onClick={() => handleToggleOption(option)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleToggleOption(option);
+              }}
             >
               <Checkbox
                 id={option}
                 checked={value.includes(option)}
                 onCheckedChange={() => handleToggleOption(option)}
+                onClick={(e) => e.stopPropagation()}
               />
               <label
                 htmlFor={option}
                 className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
               >
                 {option}
               </label>
