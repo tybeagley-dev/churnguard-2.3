@@ -585,9 +585,10 @@ export default function AccountMetricsTableMonthly() {
               <MultiSelect
                 options={uniqueCSMs}
                 value={selectedCSMs}
-                onChange={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
+                onChange={() => {}} // No immediate onChange
+                onApply={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
                 placeholder="All CSMs"
-                keepOpenAfterChange={true}
+                showApplyButton={true}
                 maxDisplay={3}
               />
             </div>

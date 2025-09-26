@@ -11,6 +11,8 @@ interface MultiSelectProps {
   placeholder?: string;
   maxDisplay?: number;
   keepOpenAfterChange?: boolean;
+  showApplyButton?: boolean;
+  onApply?: (value: string[]) => void;
 }
 
 export function MultiSelect({
@@ -19,7 +21,9 @@ export function MultiSelect({
   onChange,
   placeholder = "Select items...",
   maxDisplay = 2,
-  keepOpenAfterChange = false
+  keepOpenAfterChange = false,
+  showApplyButton = false,
+  onApply
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [localValue, setLocalValue] = useState(value);
@@ -37,6 +41,11 @@ export function MultiSelect({
 
   const debouncedOnChange = (newValue: string[]) => {
     setLocalValue(newValue); // Update local state immediately for UI
+
+    // If showApplyButton is true, don't call onChange automatically
+    if (showApplyButton) {
+      return;
+    }
 
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -143,6 +152,25 @@ export function MultiSelect({
             </div>
           ))}
         </div>
+        {showApplyButton && (
+          <div className="border-t p-2">
+            <Button
+              type="button"
+              size="sm"
+              className="w-full"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (onApply) {
+                  onApply(localValue);
+                }
+                setOpen(false);
+              }}
+            >
+              Apply Filter ({localValue.length})
+            </Button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
