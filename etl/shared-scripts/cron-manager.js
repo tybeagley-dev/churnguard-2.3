@@ -163,6 +163,38 @@ class CronManager {
     }
   }
 
+  // Get previous month in YYYY-MM format
+  getPreviousMonth() {
+    const lastMonth = new Date();
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    return lastMonth.toISOString().slice(0, 7);
+  }
+
+  // Historical monthly rollup for previous month (runs on 1st of month)
+  async runHistoricalMonthlyRollup(month = null) {
+    const targetMonth = month || this.getPreviousMonth();
+    this.log('info', `📜 Starting historical monthly rollup for ${targetMonth}`);
+
+    try {
+      // Historical monthly aggregation for previous month
+      await this.runCommand('node', [
+        path.join(this.etlBasePath, 'postgresql-native/monthly-rollup-etl-postgres-native.js'),
+        targetMonth,
+        '--historical'
+      ]);
+
+      this.log('info', `✅ Historical monthly rollup completed successfully for ${targetMonth}`);
+      await this.sendSlackNotification(`Historical monthly rollup completed for ${targetMonth}`);
+
+      return { success: true, month: targetMonth };
+
+    } catch (error) {
+      this.log('error', `❌ Historical monthly rollup failed for ${targetMonth}: ${error.message}`);
+      await this.sendSlackNotification(`Historical monthly rollup failed for ${targetMonth}: ${error.message}`, true);
+      throw error;
+    }
+  }
+
   // Test connection and dry run
   async testETLs(date = null) {
     const targetDate = date || this.getYesterdayDate();
@@ -185,7 +217,7 @@ class CronManager {
     }
   }
 
-  // Full pipeline (daily + monthly if it's the 1st of month)
+  // Full pipeline (daily + current month rollup for trending updates)
   async runFullPipeline(date = null) {
     const targetDate = date || this.getYesterdayDate();
     this.log('info', `🚀 Starting full ETL pipeline for ${targetDate}`);
@@ -194,12 +226,9 @@ class CronManager {
       // Always run daily ETL
       await this.runDailyETL(targetDate);
 
-      // Run monthly rollup if it's the 1st of the month
-      const today = new Date();
-      if (today.getDate() === 1) {
-        this.log('info', `📅 First of month detected, running monthly rollup`);
-        await this.runMonthlyRollup();
-      }
+      // Always run monthly rollup for current month (trending updates)
+      this.log('info', `📅 Running current month rollup for trending updates`);
+      await this.runMonthlyRollup();
 
       this.log('info', `🎉 Full ETL pipeline completed successfully`);
       return { success: true, date: targetDate };
@@ -231,6 +260,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         .catch(() => process.exit(1));
       break;
 
+    case 'historical':
+      cronManager.runHistoricalMonthlyRollup(dateArg)
+        .then(() => process.exit(0))
+        .catch(() => process.exit(1));
+      break;
+
     case 'test':
       cronManager.testETLs(dateArg)
         .then(() => process.exit(0))
@@ -247,15 +282,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.error(`❌ Usage: node cron-manager.js <command> [date]
 
 Commands:
-  daily [YYYY-MM-DD]   Run daily ETL (defaults to yesterday)
-  monthly [YYYY-MM]    Run monthly rollup (defaults to current month)
-  test [YYYY-MM-DD]    Test ETL connections and dry run
-  full [YYYY-MM-DD]    Run full pipeline (daily + monthly if 1st of month)
+  daily [YYYY-MM-DD]      Run daily ETL (defaults to yesterday)
+  monthly [YYYY-MM]       Run monthly rollup for current month trending (defaults to current month)
+  historical [YYYY-MM]    Run historical monthly rollup for previous month (defaults to previous month)
+  test [YYYY-MM-DD]       Test ETL connections and dry run
+  full [YYYY-MM-DD]       Run full pipeline (daily + current month rollup)
 
 Examples:
   node cron-manager.js daily
   node cron-manager.js daily 2025-09-24
   node cron-manager.js monthly 2025-09
+  node cron-manager.js historical 2025-08
   node cron-manager.js test
   node cron-manager.js full
 
