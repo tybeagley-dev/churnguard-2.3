@@ -58,10 +58,6 @@ export function MultiSelect({
           role="combobox"
           aria-expanded={open}
           className="w-48 justify-between text-left font-normal"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
         >
           <span className="truncate">{getDisplayText()}</span>
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
