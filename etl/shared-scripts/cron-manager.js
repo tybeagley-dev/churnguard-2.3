@@ -104,7 +104,14 @@ class CronManager {
     this.log('info', `🗓️  Starting daily ETL for ${targetDate}`);
 
     try {
-      // Step 1: Daily metrics ETL
+      // Step 1: Accounts sync from BigQuery
+      this.log('info', `🔄 Syncing accounts from BigQuery...`);
+      await this.runCommand('node', [
+        path.join(this.etlBasePath, 'postgresql-native/accounts-etl-postgres-native.js')
+      ]);
+
+      // Step 2: Daily metrics ETL
+      this.log('info', `📊 Processing daily metrics for ${targetDate}...`);
       await this.runCommand('node', [
         path.join(this.etlBasePath, 'postgresql-native/daily-metrics-etl-postgres-native.js'),
         targetDate
