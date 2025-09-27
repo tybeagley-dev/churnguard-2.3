@@ -169,10 +169,7 @@ class AccountsETLPostgresNative {
       // Start transaction
       await client.query('BEGIN');
 
-      // Clear existing data
-      await client.query('DELETE FROM accounts');
-
-      // Insert all accounts using parameterized queries
+      // Use upsert (INSERT ... ON CONFLICT) instead of DELETE + INSERT
       for (const account of accounts) {
         // Handle dates safely - keep real dates or set to null
         let launchedAt = null;
@@ -203,11 +200,21 @@ class AccountsETLPostgresNative {
           }
         }
 
+        // PostgreSQL upsert: insert or update if account_id already exists
         await client.query(`
           INSERT INTO accounts (
             account_id, account_name, status, launched_at,
             csm_owner, hubspot_id, archived_at, earliest_unit_archived_at, last_updated
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (account_id) DO UPDATE SET
+            account_name = EXCLUDED.account_name,
+            status = EXCLUDED.status,
+            launched_at = EXCLUDED.launched_at,
+            csm_owner = EXCLUDED.csm_owner,
+            hubspot_id = EXCLUDED.hubspot_id,
+            archived_at = EXCLUDED.archived_at,
+            earliest_unit_archived_at = EXCLUDED.earliest_unit_archived_at,
+            last_updated = EXCLUDED.last_updated
         `, [
           account.account_id,
           account.account_name,
