@@ -207,11 +207,20 @@ class AccountsETLPostgresNative {
             csm_owner, hubspot_id, archived_at, earliest_unit_archived_at, last_updated
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           ON CONFLICT (account_id) DO UPDATE SET
-            account_name = EXCLUDED.account_name,
+            account_name = CASE
+              WHEN accounts.account_name_protected = TRUE THEN accounts.account_name
+              ELSE EXCLUDED.account_name
+            END,
             status = EXCLUDED.status,
             launched_at = EXCLUDED.launched_at,
-            csm_owner = EXCLUDED.csm_owner,
-            hubspot_id = EXCLUDED.hubspot_id,
+            csm_owner = CASE
+              WHEN accounts.csm_owner_protected = TRUE THEN accounts.csm_owner
+              ELSE EXCLUDED.csm_owner
+            END,
+            hubspot_id = CASE
+              WHEN accounts.hubspot_id_protected = TRUE THEN accounts.hubspot_id
+              ELSE EXCLUDED.hubspot_id
+            END,
             archived_at = EXCLUDED.archived_at,
             earliest_unit_archived_at = EXCLUDED.earliest_unit_archived_at,
             last_updated = EXCLUDED.last_updated
