@@ -1,0 +1,312 @@
+import { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
+
+interface AccountDetailModalProps {
+  accountId: string | null;
+  accountName: string;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+interface WeeklyMetric {
+  week_yr: string;
+  week_label: string;
+  total_spend: number;
+  total_texts_delivered: number;
+  coupons_redeemed: number;
+  active_subs_cnt: number;
+}
+
+export default function AccountDetailModal({ 
+  accountId, 
+  accountName, 
+  isOpen, 
+  onClose 
+}: AccountDetailModalProps) {
+  
+  const [visibleMetrics, setVisibleMetrics] = useState({
+    spend: true,
+    texts: true,
+    redemptions: true,
+    subscribers: true
+  });
+
+  const { data: weeklyData, isLoading } = useQuery({
+    queryKey: ['/api/account-history', accountId],
+    queryFn: () =>
+      fetch(`/api/account-history/${accountId}`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      })
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to fetch account history');
+          return res.json();
+        }),
+    enabled: isOpen && !!accountId,
+  });
+
+  const toggleMetric = (metric: keyof typeof visibleMetrics) => {
+    setVisibleMetrics(prev => ({
+      ...prev,
+      [metric]: !prev[metric]
+    }));
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  const formatNumber = (value: number) => {
+    return new Intl.NumberFormat('en-US').format(value);
+  };
+
+  // Prepare chart data - use backend's week_label directly
+  const chartData = weeklyData || [];
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold">
+            Account Details: {accountName}
+          </DialogTitle>
+          <div className="text-sm text-gray-600">
+            12-Week Historical Performance
+          </div>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin" />
+            <span className="ml-2">Loading historical data...</span>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-purple-50 p-4 rounded-lg border">
+                <div className="text-sm font-bold text-purple-800 mb-2">Total Spend (12 Weeks)</div>
+                <div className="text-lg font-bold text-purple-600">
+                  {formatCurrency(chartData.reduce((sum, item) => sum + (parseFloat(item.total_spend) || 0), 0))}
+                </div>
+              </div>
+              
+              <div className="bg-orange-50 p-4 rounded-lg border">
+                <div className="text-sm font-bold text-orange-800 mb-2">Total Texts (12 Weeks)</div>
+                <div className="text-lg font-bold text-orange-600">
+                  {formatNumber(chartData.reduce((sum, item) => sum + (parseInt(item.total_texts_delivered) || 0), 0))}
+                </div>
+              </div>
+              
+              <div className="bg-green-50 p-4 rounded-lg border">
+                <div className="text-sm font-bold text-green-800 mb-2">Total Redemptions (12 Weeks)</div>
+                <div className="text-lg font-bold text-green-600">
+                  {formatNumber(chartData.reduce((sum, item) => sum + (parseInt(item.coupons_redeemed) || 0), 0))}
+                </div>
+              </div>
+              
+              <div className="bg-blue-50 p-4 rounded-lg border">
+                <div className="text-sm font-bold text-blue-800 mb-2">Avg Subscribers (12 Weeks)</div>
+                <div className="text-lg font-bold text-blue-600">
+                  {formatNumber(Math.round(chartData.reduce((sum, item) => sum + (parseInt(item.active_subs_cnt) || 0), 0) / Math.max(chartData.length, 1)))}
+                </div>
+              </div>
+            </div>
+
+            {/* Combined Chart with Metric Toggles */}
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="text-lg font-semibold">Weekly Performance Trends</h3>
+                
+                {/* Metric Toggle Controls */}
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="spend"
+                      checked={visibleMetrics.spend}
+                      onCheckedChange={() => toggleMetric('spend')}
+                    />
+                    <label htmlFor="spend" className="text-sm font-medium text-purple-600 cursor-pointer">
+                      Spend
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="texts"
+                      checked={visibleMetrics.texts}
+                      onCheckedChange={() => toggleMetric('texts')}
+                    />
+                    <label htmlFor="texts" className="text-sm font-medium text-orange-600 cursor-pointer">
+                      Texts
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="redemptions"
+                      checked={visibleMetrics.redemptions}
+                      onCheckedChange={() => toggleMetric('redemptions')}
+                    />
+                    <label htmlFor="redemptions" className="text-sm font-medium text-green-600 cursor-pointer">
+                      Redemptions
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="subscribers"
+                      checked={visibleMetrics.subscribers}
+                      onCheckedChange={() => toggleMetric('subscribers')}
+                    />
+                    <label htmlFor="subscribers" className="text-sm font-medium text-blue-600 cursor-pointer">
+                      Subscribers
+                    </label>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="week_yr"
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                    fontSize={12}
+                  />
+                  <YAxis
+                    tickFormatter={(value) => formatNumber(value)}
+                    tick={{ fontSize: 12 }}
+                    domain={[0, (dataMax) => {
+                      // Handle edge cases: NaN, undefined, null, or zero
+                      if (!dataMax || isNaN(dataMax) || dataMax <= 0) {
+                        return 100; // Default reasonable max for empty charts
+                      }
+
+                      // Calculate a nice round number above the max value
+                      const maxValue = dataMax * 1.1; // Add 10% padding
+                      const magnitude = Math.pow(10, Math.floor(Math.log10(maxValue)));
+                      return Math.ceil(maxValue / magnitude) * magnitude;
+                    }]}
+                    tickCount={6}
+                  />
+                  <Tooltip
+                    formatter={(value, name) => {
+                      // Check both dataKey and Line name prop for spend formatting
+                      const isSpend = name === 'total_spend' || name === 'Spend';
+                      const formatValue = isSpend ? formatCurrency(Number(value)) : formatNumber(Number(value));
+                      const displayName = name === 'total_spend' || name === 'Spend' ? 'Spend' :
+                                         name === 'total_texts_delivered' || name === 'Texts' ? 'Texts' :
+                                         name === 'coupons_redeemed' || name === 'Redemptions' ? 'Redemptions' :
+                                         name === 'active_subs_cnt' || name === 'Subscribers' ? 'Subscribers' : String(name);
+                      return [formatValue, displayName];
+                    }}
+                    labelFormatter={(label, payload) => {
+                      if (payload && payload[0] && payload[0].payload) {
+                        return payload[0].payload.week_label;
+                      }
+                      return label;
+                    }}
+                  />
+                  <Legend />
+                  
+                  {visibleMetrics.spend && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="total_spend" 
+                      stroke="#7c3aed" 
+                      strokeWidth={3}
+                      dot={{ fill: '#7c3aed', strokeWidth: 2, r: 4 }}
+                      name="Spend"
+                    />
+                  )}
+                  
+                  {visibleMetrics.texts && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="total_texts_delivered" 
+                      stroke="#ea580c" 
+                      strokeWidth={3}
+                      dot={{ fill: '#ea580c', strokeWidth: 2, r: 4 }}
+                      name="Texts"
+                    />
+                  )}
+                  
+                  {visibleMetrics.redemptions && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="coupons_redeemed" 
+                      stroke="#16a34a" 
+                      strokeWidth={3}
+                      dot={{ fill: '#16a34a', strokeWidth: 2, r: 4 }}
+                      name="Redemptions"
+                    />
+                  )}
+                  
+                  {visibleMetrics.subscribers && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="active_subs_cnt" 
+                      stroke="#2563eb" 
+                      strokeWidth={3}
+                      dot={{ fill: '#2563eb', strokeWidth: 2, r: 4 }}
+                      name="Subscribers"
+                    />
+                  )}
+                </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Weekly Data Table */}
+            <div className="bg-white rounded-lg border">
+              <div className="p-4 border-b">
+                <h3 className="text-lg font-semibold">Weekly Breakdown</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="p-3 text-left font-semibold">Week</th>
+                      <th className="p-3 text-right font-semibold">Spend</th>
+                      <th className="p-3 text-right font-semibold">Texts</th>
+                      <th className="p-3 text-right font-semibold">Redemptions</th>
+                      <th className="p-3 text-right font-semibold">Subscribers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...chartData].reverse().map((item, index) => (
+                      <tr key={item.week_yr} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
+                        <td className="p-3 font-medium">{item.week_label}</td>
+                        <td className="p-3 text-right font-mono">{formatCurrency(item.total_spend || 0)}</td>
+                        <td className="p-3 text-right font-mono">{formatNumber(item.total_texts_delivered || 0)}</td>
+                        <td className="p-3 text-right font-mono">{formatNumber(item.coupons_redeemed || 0)}</td>
+                        <td className="p-3 text-right font-mono">{formatNumber(item.active_subs_cnt || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

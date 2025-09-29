@@ -794,7 +794,7 @@ export default function AccountMetricsTableMonthly() {
                   </div>
                 </div>
               </div>
-
+              
               {/* Medium Risk Count */}
               <div className="bg-orange-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-orange-800 mb-3">Medium Risk</div>
@@ -809,7 +809,7 @@ export default function AccountMetricsTableMonthly() {
                   </div>
                 </div>
               </div>
-
+              
               {/* Low Risk Count */}
               <div className="bg-green-50 p-4 rounded-lg border">
                 <div className="text-sm font-bold text-green-800 mb-3">Low Risk</div>
