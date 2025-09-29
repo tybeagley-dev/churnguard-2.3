@@ -357,6 +357,203 @@ class MonthlyRollupETLPostgresNative {
     return { level, reasons };
   }
 
+  // Calculate historical risk level for completed months (runs on 1st of following month)
+  calculateHistoricalRiskLevel(monthData, accountData, previousMonthData = null) {
+    const reasons = [];
+
+    // Check if account was archived during this specific month
+    const monthStart = new Date(monthData.month + '-01');
+    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+
+    const archivedDate = accountData.archived_at
+      ? new Date(accountData.archived_at)
+      : accountData.earliest_unit_archived_at
+        ? new Date(accountData.earliest_unit_archived_at)
+        : null;
+
+    // Flag 1: If archived during this specific month = high risk
+    if (archivedDate && archivedDate >= monthStart && archivedDate <= monthEnd) {
+      reasons.push('Recently Archived');
+      return { level: 'high', reasons };
+    }
+
+    // FROZEN accounts logic
+    if (accountData.status === 'FROZEN') {
+      const hasCurrentMonthTexts = monthData.total_texts_delivered > 0;
+      reasons.push('Frozen Account Status');
+      if (!hasCurrentMonthTexts) {
+        reasons.push('Frozen & Inactive');
+        return { level: 'high', reasons };
+      }
+      return { level: 'medium', reasons };
+    }
+
+    // LAUNCHED/ACTIVE accounts: Flag-based system
+    let flagCount = 0;
+    const monthsSinceStart = this.calculateMonthsSinceStart(accountData.launched_at, monthData.month);
+
+    // Flag 2: Monthly Redemptions (< 10 redemptions) - 1 point
+    if (monthData.total_coupons_redeemed < this.MONTHLY_REDEMPTIONS_THRESHOLD) {
+      flagCount++;
+      reasons.push('Low Monthly Redemptions');
+    }
+
+    // Flag 3: Low Engagement Combo (< 300 subs AND < 35 redemptions) - 2 points
+    // Only available for accounts after their first two months
+    if (monthsSinceStart > 2) {
+      if (monthData.avg_active_subs_cnt < this.LOW_ENGAGEMENT_COMBO_SUBS_THRESHOLD &&
+          monthData.total_coupons_redeemed < this.LOW_ENGAGEMENT_COMBO_REDEMPTIONS_THRESHOLD) {
+        flagCount += 2;
+        reasons.push('Low Engagement Combo');
+      }
+    }
+
+    // Flag 4: Low Activity (< 300 subscribers per account) - 1 point
+    if (monthData.avg_active_subs_cnt < this.LOW_ACTIVITY_SUBS_THRESHOLD) {
+      flagCount++;
+      reasons.push('Low Activity');
+    }
+
+    // Flag 5 & 6: Drop flags only available after month 3 with previous month data
+    if (previousMonthData && monthsSinceStart >= 3) {
+      // Flag 5: Spend Drop (≥ 40% decrease) - 1 point
+      if (previousMonthData.total_spend > 0) {
+        const spendDrop = Math.max(0, (previousMonthData.total_spend - monthData.total_spend) / previousMonthData.total_spend);
+        if (spendDrop >= this.SPEND_DROP_THRESHOLD) {
+          flagCount++;
+          reasons.push('Spend Drop');
+        }
+      }
+
+      // Flag 6: Redemptions Drop (≥ 50% decrease) - 1 point
+      if (previousMonthData.total_coupons_redeemed > 0) {
+        const redemptionsDrop = Math.max(0, (previousMonthData.total_coupons_redeemed - monthData.total_coupons_redeemed) / previousMonthData.total_coupons_redeemed);
+        if (redemptionsDrop >= this.REDEMPTIONS_DROP_THRESHOLD) {
+          flagCount++;
+          reasons.push('Redemptions Drop');
+        }
+      }
+    }
+
+    // Determine risk level based on flag count
+    let level = 'low';
+    if (flagCount >= 3) level = 'high';
+    else if (flagCount >= 1) level = 'medium';
+
+    // Ensure low-risk accounts with no flags show "No flags" instead of empty array
+    const finalReasons = reasons.length > 0 ? reasons : ['No flags'];
+
+    return { level, reasons: finalReasons };
+  }
+
+  // Calculate historical risk levels for a completed month (runs on 1st of following month)
+  async calculateHistoricalRiskForMonth(client, targetMonth) {
+    console.log(`🎯 Calculating historical risk levels for completed month ${targetMonth}...`);
+
+    // Get all monthly metrics for the target month with account details
+    const accountsResult = await client.query(`
+      SELECT
+        mm.account_id, mm.month, mm.total_spend, mm.total_texts_delivered,
+        mm.total_coupons_redeemed, mm.avg_active_subs_cnt,
+        a.launched_at, a.status, a.archived_at, a.earliest_unit_archived_at
+      FROM monthly_metrics mm
+      JOIN accounts a ON mm.account_id = a.account_id
+      WHERE mm.month = $1
+      ORDER BY mm.account_id
+    `, [targetMonth]);
+
+    console.log(`📊 Processing ${accountsResult.rows.length} accounts for historical risk...`);
+
+    // Get previous month for comparison
+    const prevDate = new Date(targetMonth + '-01');
+    prevDate.setMonth(prevDate.getMonth() - 1);
+    const previousMonth = prevDate.toISOString().slice(0, 7);
+
+    let accountsUpdated = 0;
+
+    for (const account of accountsResult.rows) {
+      // Get previous month data for comparison
+      let previousMonthData = null;
+      try {
+        const prevResult = await client.query(`
+          SELECT total_spend, total_coupons_redeemed, avg_active_subs_cnt, total_texts_delivered
+          FROM monthly_metrics
+          WHERE account_id = $1 AND month = $2
+        `, [account.account_id, previousMonth]);
+
+        if (prevResult.rows[0]) {
+          previousMonthData = {
+            total_spend: parseFloat(prevResult.rows[0].total_spend) || 0,
+            total_coupons_redeemed: parseInt(prevResult.rows[0].total_coupons_redeemed) || 0,
+            avg_active_subs_cnt: parseFloat(prevResult.rows[0].avg_active_subs_cnt) || 0,
+            total_texts_delivered: parseInt(prevResult.rows[0].total_texts_delivered) || 0
+          };
+        }
+      } catch (error) {
+        // Previous month data not available - normal for new accounts
+        previousMonthData = null;
+      }
+
+      // Calculate historical risk using the same algorithm as SQLite
+      const riskResult = this.calculateHistoricalRiskLevel(account, account, previousMonthData);
+
+      // Update historical_risk_level and risk_reasons, clear trending fields
+      await client.query(`
+        UPDATE monthly_metrics
+        SET
+          historical_risk_level = $1,
+          risk_reasons = $2,
+          trending_risk_level = NULL,
+          trending_risk_reasons = NULL,
+          updated_at = NOW()
+        WHERE account_id = $3 AND month = $4
+      `, [riskResult.level, JSON.stringify(riskResult.reasons), account.account_id, targetMonth]);
+
+      accountsUpdated++;
+
+      // Progress logging
+      if (accountsUpdated % 100 === 0) {
+        console.log(`   🎯 Updated ${accountsUpdated}/${accountsResult.rows.length} accounts...`);
+      }
+    }
+
+    return accountsUpdated;
+  }
+
+  // Process historical rollup for a completed month
+  async processHistoricalMonth(month) {
+    await this.testConnection();
+
+    const { targetMonth, monthLabel } = this.getMonthDetails(month);
+    console.log(`📜 Processing historical rollup for ${monthLabel} (${targetMonth})...`);
+
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Calculate historical risk levels for the completed month
+      const accountsUpdated = await this.calculateHistoricalRiskForMonth(client, targetMonth);
+
+      await client.query('COMMIT');
+
+      console.log(`✅ Historical rollup completed for ${monthLabel}: ${accountsUpdated} accounts updated`);
+
+      return {
+        month: targetMonth,
+        monthLabel: monthLabel,
+        accountsProcessed: accountsUpdated
+      };
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error(`❌ Historical rollup failed for ${targetMonth}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   // Clean shutdown
   async close() {
     await this.pool.end();
@@ -364,21 +561,27 @@ class MonthlyRollupETLPostgresNative {
   }
 }
 
-// IDENTICAL CLI behavior to SQLite update-current-month.js
+// CLI behavior - supports both trending (default) and historical rollups
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const month = process.argv[2]; // Optional: specify month as YYYY-MM, defaults to current month
+  const month = process.argv[2]; // Required: specify month as YYYY-MM
+  const isHistorical = process.argv.includes('--historical');
 
-  if (month && !/^\d{4}-\d{2}$/.test(month)) {
-    console.error('❌ Usage: node monthly-rollup-etl-postgres-native.js [YYYY-MM]');
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    console.error('❌ Usage: node monthly-rollup-etl-postgres-native.js <YYYY-MM> [--historical]');
     console.error('   Example: node monthly-rollup-etl-postgres-native.js 2025-09');
-    console.error('   If no month specified, uses current month');
+    console.error('   Example: node monthly-rollup-etl-postgres-native.js 2025-08 --historical');
+    console.error('   --historical flag: Calculate final historical risk levels for completed month');
     process.exit(1);
   }
 
   const etl = new MonthlyRollupETLPostgresNative();
-  etl.processMonth(month)
+
+  const processMethod = isHistorical ? etl.processHistoricalMonth(month) : etl.processMonth(month);
+  const processType = isHistorical ? 'Historical monthly rollup' : 'Monthly rollup';
+
+  processMethod
     .then(result => {
-      console.log(`🎉 Monthly rollup ETL completed for ${result.monthLabel}!`);
+      console.log(`🎉 ${processType} ETL completed for ${result.monthLabel}!`);
       console.log(`📊 Summary: ${result.accountsProcessed} accounts processed for ${result.month}`);
       return etl.close();
     })
@@ -386,7 +589,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       process.exit(0);
     })
     .catch(error => {
-      console.error('❌ Monthly rollup ETL failed:', error);
+      console.error(`❌ ${processType} ETL failed:`, error);
       etl.close().finally(() => process.exit(1));
     });
 }
