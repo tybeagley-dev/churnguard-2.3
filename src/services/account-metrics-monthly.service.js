@@ -381,7 +381,7 @@ export const getRiskLevelCounts = async (filters = {}) => {
 
   // Note: Don't filter by risk_level for counts since we want all risk level counts
 
-  // Get risk level counts for eligible accounts
+  // Get risk level counts for eligible accounts - match Monthly Trends logic exactly
   const countsResult = await db.query(`
     SELECT
       -- Current month trending risk counts
@@ -389,10 +389,10 @@ export const getRiskLevelCounts = async (filters = {}) => {
       SUM(CASE WHEN mm.trending_risk_level = 'medium' THEN 1 ELSE 0 END) as trending_medium,
       SUM(CASE WHEN mm.trending_risk_level = 'low' THEN 1 ELSE 0 END) as trending_low,
 
-      -- Previous month historical risk counts
-      SUM(CASE WHEN pm.historical_risk_level = 'high' THEN 1 ELSE 0 END) as historical_high,
-      SUM(CASE WHEN pm.historical_risk_level = 'medium' THEN 1 ELSE 0 END) as historical_medium,
-      SUM(CASE WHEN pm.historical_risk_level = 'low' THEN 1 ELSE 0 END) as historical_low
+      -- Previous month historical risk counts using COALESCE logic like Monthly Trends
+      SUM(CASE WHEN COALESCE(pm.trending_risk_level, pm.historical_risk_level) = 'high' THEN 1 ELSE 0 END) as historical_high,
+      SUM(CASE WHEN COALESCE(pm.trending_risk_level, pm.historical_risk_level) = 'medium' THEN 1 ELSE 0 END) as historical_medium,
+      SUM(CASE WHEN COALESCE(pm.trending_risk_level, pm.historical_risk_level) = 'low' THEN 1 ELSE 0 END) as historical_low
 
     FROM accounts a
     INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id
