@@ -381,35 +381,89 @@ export const getRiskLevelCounts = async (filters = {}) => {
 
   // Note: Don't filter by risk_level for counts since we want all risk level counts
 
-  // Get risk level counts for eligible accounts - match Monthly Trends logic exactly
+  // Get risk level counts - use separate eligibility logic for trending vs historical to match Monthly Trends
   const countsResult = await db.query(`
     SELECT
-      -- Current month trending risk counts
-      SUM(CASE WHEN mm.trending_risk_level = 'high' THEN 1 ELSE 0 END) as trending_high,
-      SUM(CASE WHEN mm.trending_risk_level = 'medium' THEN 1 ELSE 0 END) as trending_medium,
-      SUM(CASE WHEN mm.trending_risk_level = 'low' THEN 1 ELSE 0 END) as trending_low,
+      -- Current month trending risk counts using current month eligibility
+      (SELECT SUM(CASE WHEN mm_cur.trending_risk_level = 'high' THEN 1 ELSE 0 END)
+       FROM monthly_metrics mm_cur
+       INNER JOIN accounts a_cur ON mm_cur.account_id = a_cur.account_id
+       WHERE mm_cur.month = $1
+       AND (
+         a_cur.launched_at IS NOT NULL
+         AND a_cur.launched_at::date < (($1 || '-01')::date + INTERVAL '1 month')
+         AND (
+           COALESCE(a_cur.archived_at, a_cur.earliest_unit_archived_at) IS NULL
+           OR COALESCE(a_cur.archived_at, a_cur.earliest_unit_archived_at)::date >= ($1 || '-01')::date
+         )
+       )) as trending_high,
 
-      -- Previous month historical risk counts using COALESCE logic like Monthly Trends
-      SUM(CASE WHEN COALESCE(pm.trending_risk_level, pm.historical_risk_level) = 'high' THEN 1 ELSE 0 END) as historical_high,
-      SUM(CASE WHEN COALESCE(pm.trending_risk_level, pm.historical_risk_level) = 'medium' THEN 1 ELSE 0 END) as historical_medium,
-      SUM(CASE WHEN COALESCE(pm.trending_risk_level, pm.historical_risk_level) = 'low' THEN 1 ELSE 0 END) as historical_low
+      (SELECT SUM(CASE WHEN mm_cur.trending_risk_level = 'medium' THEN 1 ELSE 0 END)
+       FROM monthly_metrics mm_cur
+       INNER JOIN accounts a_cur ON mm_cur.account_id = a_cur.account_id
+       WHERE mm_cur.month = $1
+       AND (
+         a_cur.launched_at IS NOT NULL
+         AND a_cur.launched_at::date < (($1 || '-01')::date + INTERVAL '1 month')
+         AND (
+           COALESCE(a_cur.archived_at, a_cur.earliest_unit_archived_at) IS NULL
+           OR COALESCE(a_cur.archived_at, a_cur.earliest_unit_archived_at)::date >= ($1 || '-01')::date
+         )
+       )) as trending_medium,
 
-    FROM accounts a
-    INNER JOIN monthly_metrics mm ON a.account_id = mm.account_id
-      AND mm.month = $1
-      AND mm.trending_risk_level IS NOT NULL
-    LEFT JOIN monthly_metrics pm ON a.account_id = pm.account_id
-      AND pm.month = $2
-    WHERE (
-      -- Account eligibility for current month
-      a.launched_at::date <= (($3 || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')
-      AND (
-        (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($4 || '-01')::date
-      )
-      ${filterConditions}
-    )
-  `, queryParams);
+      (SELECT SUM(CASE WHEN mm_cur.trending_risk_level = 'low' THEN 1 ELSE 0 END)
+       FROM monthly_metrics mm_cur
+       INNER JOIN accounts a_cur ON mm_cur.account_id = a_cur.account_id
+       WHERE mm_cur.month = $1
+       AND (
+         a_cur.launched_at IS NOT NULL
+         AND a_cur.launched_at::date < (($1 || '-01')::date + INTERVAL '1 month')
+         AND (
+           COALESCE(a_cur.archived_at, a_cur.earliest_unit_archived_at) IS NULL
+           OR COALESCE(a_cur.archived_at, a_cur.earliest_unit_archived_at)::date >= ($1 || '-01')::date
+         )
+       )) as trending_low,
+
+      -- Previous month historical risk counts using previous month eligibility (like Monthly Trends)
+      (SELECT SUM(CASE WHEN COALESCE(mm_prev.trending_risk_level, mm_prev.historical_risk_level) = 'high' THEN 1 ELSE 0 END)
+       FROM monthly_metrics mm_prev
+       INNER JOIN accounts a_prev ON mm_prev.account_id = a_prev.account_id
+       WHERE mm_prev.month = $2
+       AND (
+         a_prev.launched_at IS NOT NULL
+         AND a_prev.launched_at::date < (($2 || '-01')::date + INTERVAL '1 month')
+         AND (
+           COALESCE(a_prev.archived_at, a_prev.earliest_unit_archived_at) IS NULL
+           OR COALESCE(a_prev.archived_at, a_prev.earliest_unit_archived_at)::date >= ($2 || '-01')::date
+         )
+       )) as historical_high,
+
+      (SELECT SUM(CASE WHEN COALESCE(mm_prev.trending_risk_level, mm_prev.historical_risk_level) = 'medium' THEN 1 ELSE 0 END)
+       FROM monthly_metrics mm_prev
+       INNER JOIN accounts a_prev ON mm_prev.account_id = a_prev.account_id
+       WHERE mm_prev.month = $2
+       AND (
+         a_prev.launched_at IS NOT NULL
+         AND a_prev.launched_at::date < (($2 || '-01')::date + INTERVAL '1 month')
+         AND (
+           COALESCE(a_prev.archived_at, a_prev.earliest_unit_archived_at) IS NULL
+           OR COALESCE(a_prev.archived_at, a_prev.earliest_unit_archived_at)::date >= ($2 || '-01')::date
+         )
+       )) as historical_medium,
+
+      (SELECT SUM(CASE WHEN COALESCE(mm_prev.trending_risk_level, mm_prev.historical_risk_level) = 'low' THEN 1 ELSE 0 END)
+       FROM monthly_metrics mm_prev
+       INNER JOIN accounts a_prev ON mm_prev.account_id = a_prev.account_id
+       WHERE mm_prev.month = $2
+       AND (
+         a_prev.launched_at IS NOT NULL
+         AND a_prev.launched_at::date < (($2 || '-01')::date + INTERVAL '1 month')
+         AND (
+           COALESCE(a_prev.archived_at, a_prev.earliest_unit_archived_at) IS NULL
+           OR COALESCE(a_prev.archived_at, a_prev.earliest_unit_archived_at)::date >= ($2 || '-01')::date
+         )
+       )) as historical_low
+  `, [currentMonth, prevMonthStr]);
   const counts = countsResult.rows;
 
   const countsData = counts[0] || {
