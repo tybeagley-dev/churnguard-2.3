@@ -162,7 +162,7 @@ class AccountsETLPostgresNative {
             AND DATE(COALESCE(a.archived_at, aad.earliest_unit_archived_at)) >= DATE('${simulationStart}')
           )
         )
-        AND a.status IN ('LAUNCHED', 'PAUSED', 'FROZEN', 'ARCHIVED')
+        AND a.status IN ('ACTIVE', 'LAUNCHED', 'PAUSED', 'FROZEN', 'ARCHIVED')
       ORDER BY a.name
     `;
 
