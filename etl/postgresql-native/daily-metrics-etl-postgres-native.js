@@ -180,12 +180,7 @@ class DailyMetricsETLPostgresNative {
       FULL OUTER JOIN text_metrics t ON ea.account_id = t.account_id
       FULL OUTER JOIN coupon_metrics c ON ea.account_id = c.account_id
       FULL OUTER JOIN sub_metrics sub ON ea.account_id = sub.account_id
-      WHERE (
-        COALESCE(s.total_spend, 0) > 0 OR
-        COALESCE(t.total_texts_delivered, 0) > 0 OR
-        COALESCE(c.coupons_redeemed, 0) > 0 OR
-        COALESCE(sub.active_subs_cnt, 0) > 0
-      )
+      WHERE COALESCE(s.total_spend, 0) > 0
       ORDER BY account_id
     `;
 
