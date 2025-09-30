@@ -106,11 +106,16 @@ class MonthlyRollupETLPostgresNative {
         LEFT JOIN daily_metrics dm ON a.account_id = dm.account_id
           AND TO_CHAR(dm.date::date, 'YYYY-MM') = $3
         WHERE (
-          -- IDENTICAL filtering logic to SQLite version
+          -- Include accounts launched before or during the target month
           a.launched_at::date <= (($4 || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')::date
           AND (
-            (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-            OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($5 || '-01')::date
+            -- Account is not ARCHIVED status (include regardless of earliest_unit_archived_at)
+            a.status != 'ARCHIVED'
+            OR
+            -- Account IS ARCHIVED and was archived after the start of the target month
+            -- Use archived_at if it exists, otherwise fall back to earliest_unit_archived_at
+            (a.status = 'ARCHIVED'
+             AND COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($5 || '-01')::date)
           )
         )
         GROUP BY a.account_id
