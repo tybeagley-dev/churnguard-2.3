@@ -27,8 +27,12 @@ export const getAccountsData = async () => {
       -- Account eligibility: launched by month-end, not archived before month-start
       a.launched_at::date <= (($2 || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')
       AND (
-        (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($3 || '-01')::date
+        -- Account is not ARCHIVED status (include regardless of earliest_unit_archived_at)
+        a.status != 'ARCHIVED'
+        OR
+        -- Account IS ARCHIVED and was archived after the start of the month
+        (a.status = 'ARCHIVED'
+         AND COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($3 || '-01')::date)
       )
     )
     ORDER BY a.account_name ASC

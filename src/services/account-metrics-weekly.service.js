@@ -65,8 +65,12 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
       -- Account eligibility: launched by eligibility period-end, not archived before eligibility period-start
       a.launched_at::date <= ($4 || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day'
       AND (
-        (a.archived_at IS NULL AND a.earliest_unit_archived_at IS NULL)
-        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($5 || '-01')::date
+        -- Account is not ARCHIVED status (include regardless of earliest_unit_archived_at)
+        a.status != 'ARCHIVED'
+        OR
+        -- Account IS ARCHIVED and was archived after the start of the eligibility period
+        (a.status = 'ARCHIVED'
+         AND COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($5 || '-01')::date)
       )
       ${filterConditions}
     )

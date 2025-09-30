@@ -20,8 +20,12 @@ export const getMonthlyTrendsData = async () => {
       a.launched_at IS NOT NULL
       AND a.launched_at::date < (mm.month || '-01')::date + INTERVAL '1 month'
       AND (
-        COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-        OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= (mm.month || '-01')::date
+        -- Account is not ARCHIVED status (include regardless of earliest_unit_archived_at)
+        a.status != 'ARCHIVED'
+        OR
+        -- Account IS ARCHIVED and was archived after the start of the month
+        (a.status = 'ARCHIVED'
+         AND COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= (mm.month || '-01')::date)
       )
     )
     AND mm.month >= TO_CHAR(CURRENT_DATE - INTERVAL '12 months', 'YYYY-MM')

@@ -56,8 +56,12 @@ export class HubSpotSyncService {
           AND a.launched_at IS NOT NULL
           AND a.launched_at::date <= ($3 || ' 23:59:59')::timestamp
           AND (
-            COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-            OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($4 || '-01')::date
+            -- Account is not ARCHIVED status (include regardless of earliest_unit_archived_at)
+            a.status != 'ARCHIVED'
+            OR
+            -- Account IS ARCHIVED and was archived after the start of the month
+            (a.status = 'ARCHIVED'
+             AND COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($4 || '-01')::date)
           )
       `, [currentMonth, previousMonth, monthEnd, currentMonth]);
       const accounts = result.rows;
@@ -221,8 +225,12 @@ export class HubSpotSyncService {
             a.launched_at IS NOT NULL
             AND a.launched_at::date <= ($1 || ' 23:59:59')::timestamp
             AND (
-              COALESCE(a.archived_at, a.earliest_unit_archived_at) IS NULL
-              OR COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($2 || '-01')::date
+              -- Account is not ARCHIVED status (include regardless of earliest_unit_archived_at)
+              a.status != 'ARCHIVED'
+              OR
+              -- Account IS ARCHIVED and was archived after the start of the month
+              (a.status = 'ARCHIVED'
+               AND COALESCE(a.archived_at, a.earliest_unit_archived_at)::date >= ($2 || '-01')::date)
             )
           )
       `, [monthEnd, currentMonth]);
