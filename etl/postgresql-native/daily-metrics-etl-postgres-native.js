@@ -84,7 +84,9 @@ class DailyMetricsETLPostgresNative {
       ),
 
       eligible_accounts AS (
-        SELECT DISTINCT a.id as account_id
+        SELECT DISTINCT
+          a.id as account_id,
+          a.launched_at
         FROM accounts.accounts a
         LEFT JOIN account_unit_archive_dates aad ON a.id = aad.account_id
         WHERE (
@@ -180,7 +182,13 @@ class DailyMetricsETLPostgresNative {
       FULL OUTER JOIN text_metrics t ON ea.account_id = t.account_id
       FULL OUTER JOIN coupon_metrics c ON ea.account_id = c.account_id
       FULL OUTER JOIN sub_metrics sub ON ea.account_id = sub.account_id
-      WHERE COALESCE(s.total_spend, 0) > 0
+      WHERE (
+        -- Include all accounts with valid launch dates (even with $0 revenue)
+        ea.launched_at IS NOT NULL
+        OR
+        -- Include NULL launch date accounts ONLY if they have revenue
+        (ea.launched_at IS NULL AND COALESCE(s.total_spend, 0) > 0)
+      )
       ORDER BY account_id
     `;
 
