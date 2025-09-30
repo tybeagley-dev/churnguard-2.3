@@ -16,11 +16,11 @@ if (!process.env.DATABASE_URL && process.env.EXTERNAL_DATABASE_URL) {
 }
 
 async function backfillAllHistorical() {
-  console.log('🔄 Starting full historical backfill (Aug 2024 - Sep 2025)...\n');
+  console.log('🔄 Starting full historical backfill (Oct 2024 - Sep 2025)...\n');
 
-  // Generate list of months to backfill
+  // Generate list of months to backfill (Oct 2024 - Sep 2025)
   const months = [
-    '2024-08', '2024-09', '2024-10', '2024-11', '2024-12',
+    '2024-10', '2024-11', '2024-12',
     '2025-01', '2025-02', '2025-03', '2025-04', '2025-05',
     '2025-06', '2025-07', '2025-08', '2025-09'
   ];
