@@ -20,9 +20,9 @@ async function backfillSeptember() {
   const etl = new DailyMetricsETLPostgresNative();
   const results = [];
 
-  // Generate all dates in September 2025
+  // Generate dates in September 2025 (Sept 1-29)
   const dates = [];
-  for (let day = 1; day <= 30; day++) {
+  for (let day = 1; day <= 29; day++) {
     const dateStr = `2025-09-${day.toString().padStart(2, '0')}`;
     dates.push(dateStr);
   }
