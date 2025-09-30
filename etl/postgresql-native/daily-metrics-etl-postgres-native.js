@@ -93,9 +93,10 @@ class DailyMetricsETLPostgresNative {
             -- Account is not archived at all
             (a.archived_at IS NULL AND aad.earliest_unit_archived_at IS NULL)
             OR
-            -- Account is archived but has a date and was archived after the month we're processing
+            -- Account was archived but the date we're processing is BEFORE the archive date
+            -- This ensures we collect metrics for all days up to (but not including) the archive date
             (COALESCE(a.archived_at, aad.earliest_unit_archived_at) IS NOT NULL
-             AND DATE(COALESCE(a.archived_at, aad.earliest_unit_archived_at)) > LAST_DAY(DATE('${date}')))
+             AND DATE('${date}') < DATE(COALESCE(a.archived_at, aad.earliest_unit_archived_at)))
           )
           -- ENHANCEMENT: Exclude accounts that are archived but have no archive date
           -- (assume they're old and outside our 12-month window)
