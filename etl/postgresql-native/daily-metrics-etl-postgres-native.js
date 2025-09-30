@@ -92,7 +92,7 @@ class DailyMetricsETLPostgresNative {
             (a.launched_at IS NOT NULL AND DATE(a.launched_at) <= DATE('${date}'))
             OR
             -- Include accounts launched within the same month (captures pre-launch platform fees on 1st of month)
-            (a.launched_at IS NOT NULL AND DATE_TRUNC('month', DATE(a.launched_at)) = DATE_TRUNC('month', DATE('${date}')))
+            (a.launched_at IS NOT NULL AND FORMAT_DATE('%Y-%m', DATE(a.launched_at)) = FORMAT_DATE('%Y-%m', DATE('${date}')))
             OR
             -- Include accounts with NULL launch date that have revenue activity (checked via revenue CTE join below)
             (a.launched_at IS NULL)
