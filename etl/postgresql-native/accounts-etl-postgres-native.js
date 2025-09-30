@@ -120,6 +120,15 @@ class AccountsETLPostgresNative {
         FROM units.units u
         WHERE u.status = 'ARCHIVED' AND u.archived_at IS NOT NULL
         GROUP BY u.account_id
+      ),
+
+      accounts_with_revenue AS (
+        -- Find accounts with revenue during simulation period (including NULL launch dates)
+        SELECT DISTINCT account_id
+        FROM dbt_models.total_revenue_by_account_and_date
+        WHERE date >= DATE('${simulationStart}')
+          AND date <= DATE('${simulationEnd}')
+          AND total > 0
       )
 
       SELECT
@@ -135,9 +144,15 @@ class AccountsETLPostgresNative {
       LEFT JOIN hubspot.companies comp ON a.hubspot_id = CAST(comp.hs_object_id AS STRING)
       LEFT JOIN hubspot.owners o ON o.id = comp.hubspot_owner_id
       LEFT JOIN account_unit_archive_dates aad ON a.id = aad.account_id
+      LEFT JOIN accounts_with_revenue awr ON a.id = awr.account_id
       WHERE
-        -- Account was launched before or during simulation period
-        (a.launched_at IS NOT NULL AND DATE(a.launched_at) <= DATE('${simulationEnd}'))
+        (
+          -- Account was launched before or during simulation period
+          (a.launched_at IS NOT NULL AND DATE(a.launched_at) <= DATE('${simulationEnd}'))
+          OR
+          -- OR account has revenue during simulation period (catches NULL launch dates)
+          awr.account_id IS NOT NULL
+        )
         AND (
           -- Either account is still active
           a.status != 'ARCHIVED'
