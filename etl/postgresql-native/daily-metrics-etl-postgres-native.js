@@ -87,8 +87,16 @@ class DailyMetricsETLPostgresNative {
         SELECT DISTINCT a.id as account_id
         FROM accounts.accounts a
         LEFT JOIN account_unit_archive_dates aad ON a.id = aad.account_id
-        WHERE a.launched_at IS NOT NULL
-          AND DATE(a.launched_at) <= DATE('${date}')
+        WHERE (
+            -- Include accounts that have launched on or before the processing date
+            (a.launched_at IS NOT NULL AND DATE(a.launched_at) <= DATE('${date}'))
+            OR
+            -- Include accounts launched within the same month (captures pre-launch platform fees on 1st of month)
+            (a.launched_at IS NOT NULL AND DATE_TRUNC('month', DATE(a.launched_at)) = DATE_TRUNC('month', DATE('${date}')))
+            OR
+            -- Include accounts with NULL launch date that have revenue activity (checked via revenue CTE join below)
+            (a.launched_at IS NULL)
+          )
           AND (
             -- Account is not archived at all
             (a.archived_at IS NULL AND aad.earliest_unit_archived_at IS NULL)
