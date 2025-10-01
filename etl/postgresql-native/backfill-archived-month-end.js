@@ -288,16 +288,21 @@ class ArchivedMonthEndBackfill {
       const { account_id, effective_archive_date, last_day_of_archive_month } = account;
 
       try {
-        console.log(`📊 Processing ${account_id} - Archive: ${effective_archive_date}, Month-end: ${last_day_of_archive_month}`);
+        // Convert date to YYYY-MM-DD string format for BigQuery
+        const monthEndDate = last_day_of_archive_month instanceof Date
+          ? last_day_of_archive_month.toISOString().split('T')[0]
+          : last_day_of_archive_month;
 
-        const metricsData = await this.getMonthEndMetrics(account_id, last_day_of_archive_month);
+        console.log(`📊 Processing ${account_id} - Archive: ${effective_archive_date}, Month-end: ${monthEndDate}`);
+
+        const metricsData = await this.getMonthEndMetrics(account_id, monthEndDate);
 
         if (metricsData.length === 0) {
-          console.log(`   ⚠️  No data found for ${last_day_of_archive_month}`);
+          console.log(`   ⚠️  No data found for ${monthEndDate}`);
           noDataCount++;
         } else {
           const metrics = metricsData[0];
-          const action = await this.upsertMetrics(account_id, last_day_of_archive_month, metrics);
+          const action = await this.upsertMetrics(account_id, monthEndDate, metrics);
 
           if (action === 'updated') {
             updatedCount++;
