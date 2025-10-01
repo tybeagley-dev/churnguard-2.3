@@ -119,6 +119,13 @@ class ArchivedMonthEndBackfill {
             (a.status = 'ARCHIVED'
              AND COALESCE(a.archived_at, aad.earliest_unit_archived_at) IS NOT NULL
              AND DATE('${date}') < DATE(COALESCE(a.archived_at, aad.earliest_unit_archived_at)))
+            OR
+            -- SPECIAL CASE: Include month-end date for the month of archiving
+            -- MSA applies on last day of month even for accounts archived mid-month
+            (a.status = 'ARCHIVED'
+             AND COALESCE(a.archived_at, aad.earliest_unit_archived_at) IS NOT NULL
+             AND FORMAT_DATE('%Y-%m', DATE('${date}')) = FORMAT_DATE('%Y-%m', DATE(COALESCE(a.archived_at, aad.earliest_unit_archived_at)))
+             AND EXTRACT(DAY FROM LAST_DAY(DATE('${date}'))) = EXTRACT(DAY FROM DATE('${date}')))
           )
       ),
 
