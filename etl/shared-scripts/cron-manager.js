@@ -241,6 +241,25 @@ class CronManager {
       throw error;
     }
   }
+
+  // Month-end backfill for archived accounts
+  async runMonthEndBackfill() {
+    this.log('info', `🔄 Starting month-end MSA backfill for archived accounts`);
+
+    try {
+      // Run month-end backfill script
+      await this.runCommand('node', [
+        path.join(this.etlBasePath, 'postgresql-native/backfill-archived-month-end.js')
+      ]);
+
+      this.log('info', `✅ Month-end backfill completed successfully`);
+      return { success: true };
+
+    } catch (error) {
+      this.log('error', `❌ Month-end backfill failed: ${error.message}`);
+      throw error;
+    }
+  }
 }
 
 // CLI Interface
@@ -287,6 +306,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         .catch(() => process.exit(1));
       break;
 
+    case 'month-end-backfill':
+      cronManager.runMonthEndBackfill()
+        .then(() => process.exit(0))
+        .catch(() => process.exit(1));
+      break;
+
     default:
       console.error(`❌ Usage: node cron-manager.js <command> [date]
 
@@ -297,6 +322,7 @@ Commands:
   test [YYYY-MM-DD]       Test ETL connections and dry run
   full [YYYY-MM-DD]       Run full pipeline (daily + current month rollup)
   hubspot                 Sync account risk data to HubSpot
+  month-end-backfill      Backfill missing MSA data for archived accounts
 
 Examples:
   node cron-manager.js daily
