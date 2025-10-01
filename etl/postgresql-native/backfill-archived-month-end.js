@@ -61,13 +61,13 @@ class ArchivedMonthEndBackfill {
       SELECT
         account_id,
         COALESCE(archived_at, earliest_unit_archived_at) as effective_archive_date,
-        DATE_TRUNC('month', COALESCE(archived_at, earliest_unit_archived_at))::date as archive_month,
-        (DATE_TRUNC('month', COALESCE(archived_at, earliest_unit_archived_at)) + INTERVAL '1 month - 1 day')::date as last_day_of_archive_month
+        DATE_TRUNC('month', COALESCE(archived_at, earliest_unit_archived_at)::timestamp)::date as archive_month,
+        (DATE_TRUNC('month', COALESCE(archived_at, earliest_unit_archived_at)::timestamp) + INTERVAL '1 month - 1 day')::date as last_day_of_archive_month
       FROM accounts
       WHERE status = 'ARCHIVED'
         AND COALESCE(archived_at, earliest_unit_archived_at) IS NOT NULL
-        AND COALESCE(archived_at, earliest_unit_archived_at) < (DATE_TRUNC('month', COALESCE(archived_at, earliest_unit_archived_at)) + INTERVAL '1 month')::date
-        AND COALESCE(archived_at, earliest_unit_archived_at) >= '2024-10-01'
+        AND COALESCE(archived_at, earliest_unit_archived_at)::timestamp < (DATE_TRUNC('month', COALESCE(archived_at, earliest_unit_archived_at)::timestamp) + INTERVAL '1 month')::date
+        AND COALESCE(archived_at, earliest_unit_archived_at)::date >= '2024-10-01'
       ORDER BY effective_archive_date
     `;
 
