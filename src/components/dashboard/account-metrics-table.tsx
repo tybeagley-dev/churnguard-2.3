@@ -494,8 +494,6 @@ export default function AccountMetricsTable() {
                   onChange={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
                   placeholder="All CSMs"
                   keepOpenAfterChange={true}
-                  showApplyButton={true}
-                  onApply={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
                 />
               </div>
               
