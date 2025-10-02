@@ -128,7 +128,7 @@ export default function AccountMetricsTableMonthly() {
         params.append('status', selectedStatus);
       }
       if (selectedCSMs && selectedCSMs.length > 0) {
-        params.append('csm_owner', selectedCSMs[0]); // Take first CSM if multiple selected
+        selectedCSMs.forEach(csm => params.append('csm_owner', csm));
       }
       if (selectedRiskLevel && selectedRiskLevel !== 'all') {
         params.append('risk_level', selectedRiskLevel);
@@ -585,11 +585,8 @@ export default function AccountMetricsTableMonthly() {
               <MultiSelect
                 options={uniqueCSMs}
                 value={selectedCSMs}
-                onChange={() => {}} // No immediate onChange
-                onApply={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
+                onChange={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
                 placeholder="All CSMs"
-                showApplyButton={true}
-                maxDisplay={3}
               />
             </div>
 

@@ -20,10 +20,10 @@ const getAccountMetricsDataForPeriod = async (weekStart, weekEnd, month, label =
     queryParams.push(filters.status);
   }
 
-  if (filters.csm_owner) {
-    paramCount++;
-    filterConditions += ` AND a.csm_owner = $${paramCount}`;
-    queryParams.push(filters.csm_owner);
+  if (filters.csm_owner && filters.csm_owner.length > 0) {
+    const placeholders = filters.csm_owner.map(() => `$${++paramCount}`).join(', ');
+    filterConditions += ` AND a.csm_owner IN (${placeholders})`;
+    queryParams.push(...filters.csm_owner);
   }
 
   if (filters.risk_level) {

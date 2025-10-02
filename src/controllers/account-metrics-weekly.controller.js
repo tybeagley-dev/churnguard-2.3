@@ -14,10 +14,13 @@ export const getAccountMetricsOverview = async (req, res) => {
       csm_owner = null
     } = req.query;
 
-    console.log(`📊 Account Metrics Overview: baseline=${baseline}, comparison=${comparison}, status=${status}, csm_owner=${csm_owner}`);
+    // Handle multiple CSM owners (can be array if multiple params sent)
+    const csmOwners = Array.isArray(csm_owner) ? csm_owner : (csm_owner ? [csm_owner] : null);
+
+    console.log(`📊 Account Metrics Overview: baseline=${baseline}, comparison=${comparison}, status=${status}, csm_owner=${csmOwners?.join(',') || 'all'}`);
 
     // Create filters object for service functions
-    const filters = { status, csm_owner, risk_level };
+    const filters = { status, csm_owner: csmOwners, risk_level };
 
     // Always get current week baseline with filters applied
     const baselineData = await getCurrentWeekBaselineData(filters);

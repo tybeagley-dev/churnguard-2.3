@@ -17,10 +17,10 @@ const getAccountMetricsDataForMonthlyPeriod = async (startDate, endDate, eligibi
     queryParams.push(filters.status);
   }
 
-  if (filters.csm_owner) {
-    paramCount++;
-    filterConditions += ` AND a.csm_owner = $${paramCount}`;
-    queryParams.push(filters.csm_owner);
+  if (filters.csm_owner && filters.csm_owner.length > 0) {
+    const placeholders = filters.csm_owner.map(() => `$${++paramCount}`).join(', ');
+    filterConditions += ` AND a.csm_owner IN (${placeholders})`;
+    queryParams.push(...filters.csm_owner);
   }
 
   if (filters.risk_level) {
@@ -128,10 +128,10 @@ export const getCurrentMonthBaselineData = async (filters = {}) => {
     queryParams.push(filters.status);
   }
 
-  if (filters.csm_owner) {
-    paramCount++;
-    filterConditions += ` AND a.csm_owner = $${paramCount}`;
-    queryParams.push(filters.csm_owner);
+  if (filters.csm_owner && filters.csm_owner.length > 0) {
+    const placeholders = filters.csm_owner.map(() => `$${++paramCount}`).join(', ');
+    filterConditions += ` AND a.csm_owner IN (${placeholders})`;
+    queryParams.push(...filters.csm_owner);
   }
 
   if (filters.risk_level) {
@@ -381,10 +381,10 @@ export const getRiskLevelCounts = async (filters = {}) => {
     queryParams.push(filters.status);
   }
 
-  if (filters.csm_owner) {
-    paramCount++;
-    filterConditions += ` AND a.csm_owner = $${paramCount}`;
-    queryParams.push(filters.csm_owner);
+  if (filters.csm_owner && filters.csm_owner.length > 0) {
+    const placeholders = filters.csm_owner.map(() => `$${++paramCount}`).join(', ');
+    filterConditions += ` AND a.csm_owner IN (${placeholders})`;
+    queryParams.push(...filters.csm_owner);
   }
 
   // Note: Don't filter by risk_level for counts since we want all risk level counts
