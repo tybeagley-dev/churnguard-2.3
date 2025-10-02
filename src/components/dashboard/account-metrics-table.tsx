@@ -53,7 +53,7 @@ export default function AccountMetricsTable() {
   const accountsPerPage = 25;
 
   const { data: accountsResponse, isLoading } = useQuery({
-    queryKey: ['/api/account-metrics-overview', timePeriod, selectedStatus, selectedCSMs, selectedRiskLevel],
+    queryKey: ['/api/account-metrics-overview', timePeriod, selectedStatus, selectedRiskLevel],
     queryFn: () => {
       // Map old period values to new dual-parameter structure
       const comparison = timePeriod === 'current_week' ? null :
@@ -71,9 +71,6 @@ export default function AccountMetricsTable() {
       }
       if (selectedStatus && selectedStatus !== 'all') {
         params.append('status', selectedStatus);
-      }
-      if (selectedCSMs && selectedCSMs.length > 0) {
-        selectedCSMs.forEach(csm => params.append('csm_owner', csm));
       }
       if (selectedRiskLevel && selectedRiskLevel !== 'all') {
         params.append('risk_level', selectedRiskLevel);
@@ -493,7 +490,6 @@ export default function AccountMetricsTable() {
                   value={selectedCSMs}
                   onChange={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
                   placeholder="All CSMs"
-                  keepOpenAfterChange={true}
                 />
               </div>
               

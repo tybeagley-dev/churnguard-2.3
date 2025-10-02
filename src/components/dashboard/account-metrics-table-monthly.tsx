@@ -117,7 +117,7 @@ export default function AccountMetricsTableMonthly() {
   };
 
   const { data: apiResponse, isLoading } = useQuery({
-    queryKey: ['/api/account-metrics-monthly', timePeriod, selectedStatus, selectedCSMs, selectedRiskLevel, selectedTrendingRiskLevel],
+    queryKey: ['/api/account-metrics-monthly', timePeriod, selectedStatus, selectedRiskLevel, selectedTrendingRiskLevel],
     queryFn: async () => {
       const comparison = getComparisonParam(timePeriod);
       const params = new URLSearchParams();
@@ -126,9 +126,6 @@ export default function AccountMetricsTableMonthly() {
       }
       if (selectedStatus && selectedStatus !== 'all') {
         params.append('status', selectedStatus);
-      }
-      if (selectedCSMs && selectedCSMs.length > 0) {
-        selectedCSMs.forEach(csm => params.append('csm_owner', csm));
       }
       if (selectedRiskLevel && selectedRiskLevel !== 'all') {
         params.append('risk_level', selectedRiskLevel);
@@ -587,7 +584,6 @@ export default function AccountMetricsTableMonthly() {
                 value={selectedCSMs}
                 onChange={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
                 placeholder="All CSMs"
-                keepOpenAfterChange={true}
               />
             </div>
 
