@@ -105,11 +105,21 @@ class AccountsETLPostgresNative {
   }
 
   async getAccountsFromBigQuery() {
-    console.log('🔍 Fetching accounts from BigQuery with historical range filtering...');
+    console.log('🔍 Fetching accounts from BigQuery with dynamic rolling date range...');
 
-    // Include all accounts that were active during our simulation period (Aug 2024 - Sep 2025)
-    const simulationStart = '2024-08-01';  // Start of simulation
-    const simulationEnd = '2025-09-30';   // End of simulation
+    // Dynamic date range: 12 calendar months prior to current month + current month
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-based (0 = January)
+
+    // Calculate start date: first day of month 12 months ago
+    const startDate = new Date(currentYear, currentMonth - 12, 1);
+    const simulationStart = startDate.toISOString().split('T')[0];
+
+    // Calculate end date: current date (updates daily)
+    const simulationEnd = now.toISOString().split('T')[0];
+
+    console.log(`📅 Dynamic date range: ${simulationStart} to ${simulationEnd} (rolling 12 months + current month)`)
 
     const query = `
       WITH account_unit_archive_dates AS (
@@ -123,7 +133,7 @@ class AccountsETLPostgresNative {
       ),
 
       accounts_with_revenue AS (
-        -- Find accounts with revenue during simulation period (including NULL launch dates)
+        -- Find accounts with revenue during rolling 12-month window (including NULL launch dates)
         SELECT DISTINCT account_id
         FROM dbt_models.total_revenue_by_account_and_date
         WHERE date >= DATE('${simulationStart}')
@@ -147,17 +157,17 @@ class AccountsETLPostgresNative {
       LEFT JOIN accounts_with_revenue awr ON a.id = awr.account_id
       WHERE
         (
-          -- Account was launched before or during simulation period
+          -- Account was launched before or during rolling window period
           (a.launched_at IS NOT NULL AND DATE(a.launched_at) <= DATE('${simulationEnd}'))
           OR
-          -- OR account has revenue during simulation period (catches NULL launch dates)
+          -- OR account has revenue during rolling window period (catches NULL launch dates)
           awr.account_id IS NOT NULL
         )
         AND (
           -- Either account is still active
           a.status != 'ARCHIVED'
           OR (
-            -- Or account was archived after simulation start (include historical accounts)
+            -- Or account was archived after rolling window start (include historical accounts)
             a.status = 'ARCHIVED'
             AND DATE(COALESCE(a.archived_at, aad.earliest_unit_archived_at)) >= DATE('${simulationStart}')
           )
@@ -167,7 +177,7 @@ class AccountsETLPostgresNative {
     `;
 
     const [rows] = await this.bigquery.query({ query, location: 'US' });
-    console.log(`✅ Found ${rows.length} accounts (with historical range filtering ${simulationStart} to ${simulationEnd})`);
+    console.log(`✅ Found ${rows.length} accounts (rolling 12-month window: ${simulationStart} to ${simulationEnd})`);
     return rows;
   }
 
