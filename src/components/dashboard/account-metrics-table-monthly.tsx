@@ -116,8 +116,11 @@ export default function AccountMetricsTableMonthly() {
     }
   };
 
+  // Determine if we need backend CSM filtering (for comparison periods)
+  const needsBackendCSMFiltering = timePeriod !== 'current_month';
+
   const { data: apiResponse, isLoading } = useQuery({
-    queryKey: ['/api/account-metrics-monthly', timePeriod, selectedStatus, selectedRiskLevel, selectedTrendingRiskLevel],
+    queryKey: ['/api/account-metrics-monthly', timePeriod, selectedStatus, selectedRiskLevel, selectedTrendingRiskLevel, ...(needsBackendCSMFiltering ? [selectedCSMs] : [])],
     queryFn: async () => {
       const comparison = getComparisonParam(timePeriod);
       const params = new URLSearchParams();
@@ -129,6 +132,10 @@ export default function AccountMetricsTableMonthly() {
       }
       if (selectedRiskLevel && selectedRiskLevel !== 'all') {
         params.append('risk_level', selectedRiskLevel);
+      }
+      // Only add CSM filtering to API for comparison periods
+      if (needsBackendCSMFiltering && selectedCSMs && selectedCSMs.length > 0) {
+        selectedCSMs.forEach(csm => params.append('csm_owner', csm));
       }
       const url = `/api/account-metrics-monthly${params.toString() ? '?' + params.toString() : ''}`;
       const response = await fetch(url);
@@ -329,8 +336,8 @@ export default function AccountMetricsTableMonthly() {
       filteredAccounts = filteredAccounts.filter(acc => acc.status === selectedStatus);
     }
     
-    // CSM filter
-    if (selectedCSMs.length > 0) {
+    // CSM filter - only apply frontend filtering for current month
+    if (!needsBackendCSMFiltering && selectedCSMs.length > 0) {
       filteredAccounts = filteredAccounts.filter(acc => selectedCSMs.includes(acc.csm));
     }
     
@@ -584,6 +591,9 @@ export default function AccountMetricsTableMonthly() {
                 value={selectedCSMs}
                 onChange={(value) => { setSelectedCSMs(value); setCurrentPage(1); }}
                 placeholder="All CSMs"
+                showApplyButton={needsBackendCSMFiltering}
+                keepOpenAfterChange={needsBackendCSMFiltering}
+                onApply={needsBackendCSMFiltering ? (value) => { setSelectedCSMs(value); setCurrentPage(1); } : undefined}
               />
             </div>
 
