@@ -29,6 +29,10 @@ class DailyMetricsETLPostgresNative {
 
     this.bigquery = new BigQuery(bigqueryConfig);
 
+    // Cost tracking configuration
+    this.enableCostTracking = process.env.BIGQUERY_COST_TRACKING === 'true';
+    this.costTrackingLevel = process.env.BIGQUERY_COST_TRACKING_LEVEL || 'summary'; // 'summary' or 'detailed'
+
     // Initialize PostgreSQL pool with proper SSL configuration
     if (!process.env.DATABASE_URL) {
       throw new Error('DATABASE_URL environment variable is required');
@@ -66,6 +70,75 @@ class DailyMetricsETLPostgresNative {
     } finally {
       client.release();
     }
+  }
+
+  // Estimate BigQuery cost based on job statistics
+  estimateQueryCost(statistics) {
+    // BigQuery pricing: $6.25 per TB processed (as of 2024)
+    const costPerTB = 6.25;
+    const bytesProcessed = parseInt(statistics.totalBytesProcessed || 0);
+    const tbProcessed = bytesProcessed / (1024 ** 4); // Convert bytes to TB
+    return (tbProcessed * costPerTB).toFixed(6);
+  }
+
+  // Log cost metrics with configurable detail level
+  logCostMetrics(costInfo) {
+    const timestamp = new Date().toISOString();
+
+    if (this.costTrackingLevel === 'summary') {
+      console.log(`💰 [COST-TRACKING] ${timestamp} | Job: ${costInfo.jobId} | Bytes: ${costInfo.totalBytesProcessed} | Est. Cost: $${costInfo.estimatedCostUSD} | Duration: ${costInfo.duration}ms`);
+    } else if (this.costTrackingLevel === 'detailed') {
+      console.log(`💰 [COST-TRACKING-DETAILED] ${timestamp}`);
+      console.log(`   📊 Job ID: ${costInfo.jobId}`);
+      console.log(`   📏 Bytes Processed: ${costInfo.totalBytesProcessed} (${(costInfo.totalBytesProcessed / (1024**3)).toFixed(2)} GB)`);
+      console.log(`   ⚡ Slot Milliseconds: ${costInfo.totalSlotMs}`);
+      console.log(`   ⏱️  Query Duration: ${costInfo.duration}ms`);
+      console.log(`   💵 Estimated Cost: $${costInfo.estimatedCostUSD}`);
+      console.log(`   🔍 Query Preview: ${costInfo.queryPreview}`);
+      console.log(`   ⏰ BigQuery Times: ${costInfo.startTime} → ${costInfo.endTime}`);
+    }
+  }
+
+  // Execute BigQuery with cost tracking
+  async executeQueryWithCostTracking(query, options = {}) {
+    const startTime = Date.now();
+
+    if (!this.enableCostTracking) {
+      // Fallback to standard execution if cost tracking is disabled
+      const [rows] = await this.bigquery.query({
+        query,
+        location: 'US',
+        ...options
+      });
+      return rows;
+    }
+
+    // Create and execute job with tracking
+    const [job] = await this.bigquery.createQueryJob({
+      query,
+      location: 'US',
+      dryRun: false,
+      ...options
+    });
+
+    const [rows] = await job.getQueryResults();
+    const metadata = job.metadata;
+
+    // Extract cost information
+    const costInfo = {
+      jobId: metadata.id,
+      queryPreview: query.substring(0, 100).replace(/\s+/g, ' ') + '...',
+      totalBytesProcessed: metadata.statistics?.totalBytesProcessed || '0',
+      totalSlotMs: metadata.statistics?.totalSlotMs || '0',
+      creationTime: metadata.statistics?.creationTime || null,
+      startTime: metadata.statistics?.startTime || null,
+      endTime: metadata.statistics?.endTime || null,
+      duration: Date.now() - startTime,
+      estimatedCostUSD: this.estimateQueryCost(metadata.statistics || {})
+    };
+
+    this.logCostMetrics(costInfo);
+    return rows;
   }
 
   // Get all daily metrics data for a date (combining all 4 SQLite ETL queries)
@@ -193,7 +266,7 @@ class DailyMetricsETLPostgresNative {
       ORDER BY account_id
     `;
 
-    const [rows] = await this.bigquery.query({ query, location: 'US' });
+    const rows = await this.executeQueryWithCostTracking(query);
     console.log(`✅ Found metrics for ${rows.length} accounts with activity on ${date}`);
     return rows;
   }
