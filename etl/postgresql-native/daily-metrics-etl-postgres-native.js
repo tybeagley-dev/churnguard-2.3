@@ -153,7 +153,11 @@ class DailyMetricsETLPostgresNative {
   async executeQueryWithCostTracking(query, options = {}) {
     const startTime = Date.now();
 
+    // Debug logging to trace execution
+    console.log(`🔧 [COST-DEBUG] executeQueryWithCostTracking called, enableCostTracking: ${this.enableCostTracking}`);
+
     if (!this.enableCostTracking) {
+      console.log(`🔧 [COST-DEBUG] Cost tracking disabled, using standard query execution`);
       // Fallback to standard execution if cost tracking is disabled
       const [rows] = await this.bigquery.query({
         query,
@@ -162,6 +166,8 @@ class DailyMetricsETLPostgresNative {
       });
       return rows;
     }
+
+    console.log(`🔧 [COST-DEBUG] Cost tracking enabled, proceeding with enhanced tracking`);
 
     // Step 1: Get dry-run cost estimate (pre-execution)
     const dryRunEstimate = await this.getDryRunCostEstimate(query);
