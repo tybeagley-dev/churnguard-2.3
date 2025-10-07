@@ -54,17 +54,15 @@ class CronManager {
       child.stdout?.on('data', (data) => {
         const output = data.toString();
         stdout += output;
-        if (this.logLevel === 'debug') {
-          process.stdout.write(output);
-        }
+        // Always forward stdout to see cost tracking logs
+        process.stdout.write(output);
       });
 
       child.stderr?.on('data', (data) => {
         const output = data.toString();
         stderr += output;
-        if (this.logLevel === 'debug') {
-          process.stderr.write(output);
-        }
+        // Always forward stderr for error visibility
+        process.stderr.write(output);
       });
 
       child.on('close', (code) => {
