@@ -191,9 +191,9 @@ class CostTrackingDebugger {
 }
 
 // Run the test
-const debugger = new CostTrackingDebugger();
-if (debugger.enableCostTracking && debugger.bigquery) {
-  debugger.testCostTracking()
+const costDebugger = new CostTrackingDebugger();
+if (costDebugger.enableCostTracking && costDebugger.bigquery) {
+  costDebugger.testCostTracking()
     .then(() => {
       console.log('🎉 Cost tracking debug test completed!');
       process.exit(0);
