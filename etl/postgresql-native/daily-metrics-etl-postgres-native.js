@@ -72,34 +72,84 @@ class DailyMetricsETLPostgresNative {
     }
   }
 
-  // Estimate BigQuery cost based on job statistics
-  estimateQueryCost(statistics) {
-    // BigQuery pricing: $6.25 per TB processed (as of 2024)
+  // Calculate actual BigQuery cost using real billing data
+  calculateActualQueryCost(statistics) {
+    // Use totalBytesBilled (actual billing amount) instead of totalBytesProcessed
+    // BigQuery pricing: $6.25 per TB (updated 2024-06, was $5.00 previously)
     const costPerTB = 6.25;
-    const bytesProcessed = parseInt(statistics.totalBytesProcessed || 0);
-    const tbProcessed = bytesProcessed / (1024 ** 4); // Convert bytes to TB
-    return (tbProcessed * costPerTB).toFixed(6);
+
+    // Prefer totalBytesBilled for accurate billing, fallback to totalBytesProcessed
+    const bytesBilled = parseInt(statistics.totalBytesBilled || statistics.totalBytesProcessed || 0);
+    const tbBilled = bytesBilled / (1024 ** 4); // Convert bytes to TB
+
+    return {
+      actualCostUSD: (tbBilled * costPerTB).toFixed(6),
+      bytesBilled: bytesBilled,
+      bytesProcessed: parseInt(statistics.totalBytesProcessed || 0),
+      pricingModel: statistics.totalBytesBilled ? 'actual-billed' : 'estimated-processed'
+    };
   }
 
-  // Log cost metrics with configurable detail level
+  // Get dry-run cost estimate before executing query
+  async getDryRunCostEstimate(query) {
+    if (!this.enableCostTracking) {
+      return null;
+    }
+
+    try {
+      const [job] = await this.bigquery.createQueryJob({
+        query,
+        location: 'US',
+        dryRun: true // This returns cost estimate without executing
+      });
+
+      const metadata = job.metadata;
+      const costData = this.calculateActualQueryCost(metadata.statistics || {});
+
+      return {
+        estimatedCostUSD: costData.actualCostUSD,
+        estimatedBytesProcessed: costData.bytesProcessed,
+        isDryRun: true
+      };
+    } catch (error) {
+      console.warn(`⚠️  Dry-run cost estimation failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  // Log cost metrics with enhanced real-time pricing data
   logCostMetrics(costInfo) {
     const timestamp = new Date().toISOString();
 
     if (this.costTrackingLevel === 'summary') {
-      console.log(`💰 [COST-TRACKING] ${timestamp} | Job: ${costInfo.jobId} | Bytes: ${costInfo.totalBytesProcessed} | Est. Cost: $${costInfo.estimatedCostUSD} | Duration: ${costInfo.duration}ms`);
+      const pricingType = costInfo.pricingModel === 'actual-billed' ? 'ACTUAL' : 'EST';
+      console.log(`💰 [COST-TRACKING] ${timestamp} | Job: ${costInfo.jobId} | Billed: ${costInfo.bytesBilled} bytes | ${pricingType} Cost: $${costInfo.actualCostUSD} | Duration: ${costInfo.duration}ms`);
+
+      // Log dry-run estimate if available
+      if (costInfo.dryRunEstimate) {
+        console.log(`💰 [PRE-ESTIMATE] ${timestamp} | Estimated: $${costInfo.dryRunEstimate.estimatedCostUSD} (${costInfo.dryRunEstimate.estimatedBytesProcessed} bytes)`);
+      }
     } else if (this.costTrackingLevel === 'detailed') {
       console.log(`💰 [COST-TRACKING-DETAILED] ${timestamp}`);
       console.log(`   📊 Job ID: ${costInfo.jobId}`);
-      console.log(`   📏 Bytes Processed: ${costInfo.totalBytesProcessed} (${(costInfo.totalBytesProcessed / (1024**3)).toFixed(2)} GB)`);
+      console.log(`   💰 Pricing Model: ${costInfo.pricingModel}`);
+      console.log(`   📏 Bytes Billed: ${costInfo.bytesBilled} (${(costInfo.bytesBilled / (1024**3)).toFixed(2)} GB)`);
+      console.log(`   📏 Bytes Processed: ${costInfo.bytesProcessed} (${(costInfo.bytesProcessed / (1024**3)).toFixed(2)} GB)`);
       console.log(`   ⚡ Slot Milliseconds: ${costInfo.totalSlotMs}`);
       console.log(`   ⏱️  Query Duration: ${costInfo.duration}ms`);
-      console.log(`   💵 Estimated Cost: $${costInfo.estimatedCostUSD}`);
+      console.log(`   💵 Actual Cost: $${costInfo.actualCostUSD}`);
       console.log(`   🔍 Query Preview: ${costInfo.queryPreview}`);
       console.log(`   ⏰ BigQuery Times: ${costInfo.startTime} → ${costInfo.endTime}`);
+
+      if (costInfo.dryRunEstimate) {
+        console.log(`   🧪 Pre-Run Estimate: $${costInfo.dryRunEstimate.estimatedCostUSD}`);
+        const accuracy = ((parseFloat(costInfo.dryRunEstimate.estimatedCostUSD) / parseFloat(costInfo.actualCostUSD)) * 100).toFixed(1);
+        console.log(`   🎯 Estimation Accuracy: ${accuracy}%`);
+      }
     }
   }
 
-  // Execute BigQuery with cost tracking
+  // Execute BigQuery with enhanced real-time cost tracking
   async executeQueryWithCostTracking(query, options = {}) {
     const startTime = Date.now();
 
@@ -113,7 +163,10 @@ class DailyMetricsETLPostgresNative {
       return rows;
     }
 
-    // Create and execute job with tracking
+    // Step 1: Get dry-run cost estimate (pre-execution)
+    const dryRunEstimate = await this.getDryRunCostEstimate(query);
+
+    // Step 2: Execute actual query with job tracking
     const [job] = await this.bigquery.createQueryJob({
       query,
       location: 'US',
@@ -124,17 +177,21 @@ class DailyMetricsETLPostgresNative {
     const [rows] = await job.getQueryResults();
     const metadata = job.metadata;
 
-    // Extract cost information
+    // Step 3: Calculate actual cost using real BigQuery billing data
+    const costData = this.calculateActualQueryCost(metadata.statistics || {});
+
+    // Step 4: Compile comprehensive cost information
     const costInfo = {
       jobId: metadata.id,
       queryPreview: query.substring(0, 100).replace(/\s+/g, ' ') + '...',
-      totalBytesProcessed: metadata.statistics?.totalBytesProcessed || '0',
       totalSlotMs: metadata.statistics?.totalSlotMs || '0',
       creationTime: metadata.statistics?.creationTime || null,
       startTime: metadata.statistics?.startTime || null,
       endTime: metadata.statistics?.endTime || null,
       duration: Date.now() - startTime,
-      estimatedCostUSD: this.estimateQueryCost(metadata.statistics || {})
+      dryRunEstimate: dryRunEstimate,
+      // Real cost data from BigQuery API
+      ...costData
     };
 
     this.logCostMetrics(costInfo);
