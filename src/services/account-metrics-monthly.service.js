@@ -240,7 +240,11 @@ export const getMonthlyComparisonData = async (comparisonPeriod, filters = {}) =
 
       const startDate = `${prevMonthStr}-01`;
       const lastDayOfPrevMonth = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0).getDate();
-      const endDay = Math.min(lastCompleteDay, lastDayOfPrevMonth);
+
+      // Fix: Ensure we don't go beyond the last day of the previous month
+      // If current month day > previous month's total days, use previous month's last day
+      // Otherwise use the same day number as current MTD comparison
+      const endDay = lastCompleteDay > lastDayOfPrevMonth ? lastDayOfPrevMonth : lastCompleteDay;
       const endDate = `${prevMonthStr}-${endDay.toString().padStart(2, '0')}`;
 
       return await getAccountMetricsDataForMonthlyPeriod(
@@ -263,7 +267,8 @@ export const getMonthlyComparisonData = async (comparisonPeriod, filters = {}) =
 
         const startDate = `${monthStr}-01`;
         const lastDayOfMonth = new Date(comparisonMonth.getFullYear(), comparisonMonth.getMonth() + 1, 0).getDate();
-        const endDay = Math.min(lastCompleteDay, lastDayOfMonth);
+        // Fix: Ensure we don't go beyond the last day of the comparison month
+        const endDay = lastCompleteDay > lastDayOfMonth ? lastDayOfMonth : lastCompleteDay;
         const endDate = `${monthStr}-${endDay.toString().padStart(2, '0')}`;
 
         const data = await getAccountMetricsDataForMonthlyPeriod(
@@ -344,7 +349,8 @@ export const getMonthlyComparisonData = async (comparisonPeriod, filters = {}) =
 
       const startDate = `${lastYearMonthStr}-01`;
       const lastDayOfMonth = new Date(lastYearMonth.getFullYear(), lastYearMonth.getMonth() + 1, 0).getDate();
-      const endDay = Math.min(lastCompleteDay, lastDayOfMonth);
+      // Fix: Ensure we don't go beyond the last day of the comparison month
+      const endDay = lastCompleteDay > lastDayOfMonth ? lastDayOfMonth : lastCompleteDay;
       const endDate = `${lastYearMonthStr}-${endDay.toString().padStart(2, '0')}`;
 
       return await getAccountMetricsDataForMonthlyPeriod(
