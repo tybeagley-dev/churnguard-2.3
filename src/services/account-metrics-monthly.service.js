@@ -235,6 +235,7 @@ export const getMonthlyComparisonData = async (comparisonPeriod, filters = {}) =
   switch (comparisonPeriod) {
     case 'vs_previous_month': {
       const prevMonth = new Date();
+      prevMonth.setDate(1); // Set to 1st to avoid month rollover issues
       prevMonth.setMonth(prevMonth.getMonth() - 1);
       const prevMonthStr = prevMonth.toISOString().slice(0, 7);
 
@@ -262,6 +263,7 @@ export const getMonthlyComparisonData = async (comparisonPeriod, filters = {}) =
       // Get data for each of the previous 3 months (same day range)
       for (let monthOffset = 1; monthOffset <= 3; monthOffset++) {
         const comparisonMonth = new Date();
+        comparisonMonth.setDate(1); // Set to 1st to avoid month rollover issues
         comparisonMonth.setMonth(comparisonMonth.getMonth() - monthOffset);
         const monthStr = comparisonMonth.toISOString().slice(0, 7);
 
@@ -344,6 +346,7 @@ export const getMonthlyComparisonData = async (comparisonPeriod, filters = {}) =
 
     case 'vs_same_month_last_year': {
       const lastYearMonth = new Date();
+      lastYearMonth.setDate(1); // Set to 1st to avoid month rollover issues
       lastYearMonth.setFullYear(lastYearMonth.getFullYear() - 1);
       const lastYearMonthStr = lastYearMonth.toISOString().slice(0, 7);
 
