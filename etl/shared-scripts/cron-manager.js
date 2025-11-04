@@ -199,7 +199,7 @@ class CronManager {
     }
   }
 
-  // Full pipeline (daily + current month rollup for trending updates)
+  // Full pipeline (daily + smart month rollup detection)
   async runFullPipeline(date = null) {
     const targetDate = date || this.getYesterdayDate();
     this.log('info', `🚀 Starting full ETL pipeline for ${targetDate}`);
@@ -208,9 +208,22 @@ class CronManager {
       // Always run daily ETL
       await this.runDailyETL(targetDate);
 
-      // Always run monthly rollup for current month (trending updates)
-      this.log('info', `📅 Running current month rollup for trending updates`);
-      await this.runMonthlyRollup();
+      // Smart month rollup: handle cross-month scenarios
+      const targetMonth = targetDate.slice(0, 7); // YYYY-MM from target date
+      const currentMonth = this.getCurrentMonth();
+
+      if (targetMonth !== currentMonth) {
+        // Processing previous month data - rollup both months
+        this.log('info', `📅 Cross-month detected: processing ${targetMonth} and ${currentMonth}`);
+        this.log('info', `🔄 Updating previous month ${targetMonth} due to new data`);
+        await this.runMonthlyRollup(targetMonth); // Previous month
+        this.log('info', `📅 Running current month rollup for trending updates`);
+        await this.runMonthlyRollup(currentMonth); // Current month
+      } else {
+        // Same month - standard rollup
+        this.log('info', `📅 Running current month rollup for trending updates`);
+        await this.runMonthlyRollup();
+      }
 
       this.log('info', `🎉 Full ETL pipeline completed successfully`);
       return { success: true, date: targetDate };
