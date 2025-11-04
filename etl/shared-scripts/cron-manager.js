@@ -177,6 +177,61 @@ class CronManager {
     }
   }
 
+  // Batch fix for historical month-end data aggregation issues
+  async runBatchMonthlyFix(startMonth = '2024-11', endMonth = '2025-10') {
+    this.log('info', `🔧 Starting batch monthly rollup fix from ${startMonth} to ${endMonth}`);
+
+    try {
+      const months = this.generateMonthRange(startMonth, endMonth);
+      this.log('info', `📅 Processing ${months.length} months: ${months.join(', ')}`);
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const month of months) {
+        try {
+          this.log('info', `🔄 Processing month ${month}...`);
+          await this.runMonthlyRollup(month);
+          successCount++;
+          this.log('info', `✅ Completed ${month} (${successCount}/${months.length})`);
+        } catch (error) {
+          failureCount++;
+          this.log('error', `❌ Failed ${month}: ${error.message}`);
+        }
+      }
+
+      this.log('info', `🎉 Batch monthly fix completed: ${successCount} succeeded, ${failureCount} failed`);
+      return { success: true, successCount, failureCount, totalMonths: months.length };
+
+    } catch (error) {
+      this.log('error', `❌ Batch monthly fix failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  // Generate array of YYYY-MM strings between start and end months (inclusive)
+  generateMonthRange(startMonth, endMonth) {
+    const months = [];
+    const [startYear, startMon] = startMonth.split('-').map(Number);
+    const [endYear, endMon] = endMonth.split('-').map(Number);
+
+    let currentYear = startYear;
+    let currentMonth = startMon;
+
+    while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMon)) {
+      const monthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+      months.push(monthStr);
+
+      currentMonth++;
+      if (currentMonth > 12) {
+        currentMonth = 1;
+        currentYear++;
+      }
+    }
+
+    return months;
+  }
+
   // Test connection and dry run
   async testETLs(date = null) {
     const targetDate = date || this.getYesterdayDate();
@@ -323,6 +378,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         .catch(() => process.exit(1));
       break;
 
+    case 'batch-monthly-fix':
+      const startMonth = process.argv[3] || '2024-11';
+      const endMonth = process.argv[4] || '2025-10';
+      cronManager.runBatchMonthlyFix(startMonth, endMonth)
+        .then(() => process.exit(0))
+        .catch(() => process.exit(1));
+      break;
+
     default:
       console.error(`❌ Usage: node cron-manager.js <command> [date]
 
@@ -334,6 +397,7 @@ Commands:
   full [YYYY-MM-DD]       Run full pipeline (daily + current month rollup)
   hubspot                 Sync account risk data to HubSpot
   month-end-backfill      Backfill missing MSA data for archived accounts
+  batch-monthly-fix [start-month] [end-month]  Fix month-end aggregation issues across date range
 
 Examples:
   node cron-manager.js daily
@@ -343,6 +407,7 @@ Examples:
   node cron-manager.js test
   node cron-manager.js full
   node cron-manager.js hubspot
+  node cron-manager.js batch-monthly-fix 2024-11 2025-10
 
 Environment Variables:
   ETL_LOG_LEVEL=debug|info|warn|error (default: info)
